@@ -119,14 +119,66 @@ VD: Xác xuất số 1 xẩy ra khi tung xúc xắc và biết số này lẻ = 
         - Điền tự động:
             - Mặc định 1 con số nào đó, tùy chuyên gia.
             - Sửa dụng mean hoặc median hoặc mode.
-            
+                - Chỉ dùng của data lân cận, không lấy của các class trái ngược nhau.
+    - Missing value không có nghĩa là data lỗi, vd, khách không dùng thẻ tín ddụng thì ngày dùng thẻ trống là đúng.
 
 - Smoothing:
-
+    - Binning
+        - Thay thế giá trị bằng trung bình cộng trong khoảng giá trị lân cận. 
+        - vd: 1,10,5,30,20,60--> 1, 7.5, 25.....
 
 ## Data Integration
 
-- Tích hợp dữ liệu từ nhiều nguồn khác nhau.
+- Có nhiều data từ nhièu đơn vị thì làm sao tích hợp về cùng 1 db?
+- Entity Integration:
+    - Match các filed cùng ý nghĩa với nhau.
+        VD: Cốt taskid ở cty a, cột runid ở công ty b là 1. -> merge thành 1 cột là taskid ahy run id.
+- Redundancy Reduction and Correlation Analysis:
+    - Phân tích tương quan để giảm chiều dữ liệu.
+        vd: x1 = 1,2,3
+            x2 = 2, 4, 6 
+            -> x2  = 2*x1 => chỉ cần giữ x1 hoặc x2 là đủ. có thể nội suy ra cái còn lại.
+    - Vì sau cần phải xử lý: Vì trong quá trình làm ML, các thuật toán ma trận nghịch đảo, ma trận tạo thành từ x1,x2 có thể không nghịch đảo -> không tính được.
+    - Có 2 cách tổng quát:
+        - Correlation Coefficient (Hệ số tương quan)
+        - Covariance (Hiêu phương sai)
+
+    1. Covariance and Correlation Coefficient:
+        - Tương quan, đồng biến: x tăng, y tăng
+            - Đồng biết mạnh hay nhẹ.... vd x tăng 100 y tăng 0.01 -> có thể bỏ qua vì đồng biến rất nhẹ
+        - Tương quan, nghịch biến: x tăng, y giảm
+        - Không tương quan: x tăng, y không tăng không giảm.
+
+
+VD:
+
+|A|B|
+|-|-|
+|6|20|
+|5|10|
+|4|14|
+|3|5|
+|2|5|
+
+n = 5
+Ā = (6+5+4+3+2)/5 = 4
+B̄ = (20+10+14+5+5)/5 = 10.8
+
+Covariance = (1/n) Σ (Aᵢ-Ā)(Bᵢ-B̄)
+= 1/5 * [(6-4)(20-10.8) + (5-4)(10-10.8) + (4-4)(14-10.8) + (3-4)(5-10.8) + (2-4)(5-10.8)]
+= 1/5 * (18.4 - 0.8 + 0 + 5.8 + 11.6)
+= 1/5 * 35
+= 7
+
+σ_A² = 1/5 * [(6-4)² + (5-4)² + (4-4)² + (3-4)² + (2-4)²] = 1/5 * 10 = 2  → σ_A = √2
+σ_B² = 1/5 * 162.8 = 32.56  → σ_B = √32.56
+
+Correlation Coefficient = Cov / (σ_A * σ_B) = 7 / (√2 * √32.56) ≈ 0.867
+
+(r = 1 chỉ khi B = aA + b, data này không thẳng hàng.)
+
+-> Đồng biến
+
 
 ## Data Transformation
 
