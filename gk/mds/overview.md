@@ -4,6 +4,15 @@ Artificial Neural Network (ANN) là một mô hình học máy gồm nhiều đ�
 
 Một mục tiêu của ANN là học một hàm ánh xạ từ input sang output. Với bài toán phân loại, output thường là nhãn hoặc xác suất của nhãn. Với bài toán hồi quy, output thường là một hoặc nhiều giá trị số.
 
+## Đọc trước (ví dụ Đậu/Rớt)
+
+Hai file này đi từ model tuyến tính tới 1 neuron, làm bằng tay trước khi đọc phần tổng quan dưới đây:
+
+1. [`very-simple-liner-model.md`](./very-simple-liner-model.md): `z = w_1*x_1 + w_2*x_2 + b`, vì sao cần `b`, và `if z >= 0` để ra Đậu/Rớt.
+2. [`very-simple-ann.md`](./very-simple-ann.md): thay bước if bằng **activation function**; đây mới chỉ là 1 neuron / perceptron, chưa phải mạng nhiều lớp.
+
+File này (`overview.md`) bước tiếp: MLP, phi tuyến, so sánh logistic regression, và giới hạn cần nói khi thuyết trình.
+
 ## Một neuron nhân tạo
 
 Với input `x_1, x_2, ..., x_d`, trọng số `w_1, w_2, ..., w_d` và bias `b`, neuron tính:
@@ -96,6 +105,9 @@ Không nên nhầm hai cách dùng từ "ngưỡng":
 | Sigmoid | `1 / (1 + exp(-z))` | Ép giá trị vào khoảng `0` đến `1` | Có thể diễn giải như điểm xác suất trong bài toán nhị phân |
 | Tanh | `(exp(z) - exp(-z)) / (exp(z) + exp(-z))` | Ép giá trị vào khoảng `-1` đến `1` | Output trung tâm tại `0`, thường dễ minh họa trong hidden layer |
 | ReLU | `max(0, z)` | Giữ phần dương, bỏ phần âm | Đơn giản, thường được dùng trong mạng nhiều lớp |
+| Softmax | ép nhiều điểm số thành xác suất cộng = 1 | Phân phối xác suất trên các lớp | Thường dùng ở **output** khi có nhiều lớp |
+
+Chi tiết ngắn và ví dụ Đậu/Rớt: xem lại [`very-simple-ann.md`](./very-simple-ann.md).
 
 Ví dụ với `z = -2`, `0` và `2`:
 
@@ -147,10 +159,12 @@ Tuy nhiên, ANN không tự động giải quyết mọi vấn đề. Các giớ
 
 ## Ý chính cần nhớ
 
-ANN không phải là một phép tính bí ẩn. Một mạng feed-forward lặp lại cùng mẫu:
+ANN không phải là một phép tính bí ẩn. Chuỗi trực giác từ hai file ví dụ đơn giản:
 
-1. Tính tổng có trọng số và bias.
-2. Áp dụng activation.
-3. Truyền output sang layer tiếp theo.
+1. Tính `z = w·x + b` (model tuyến tính).
+2. Áp dụng activation (1 neuron).
+3. Xếp nhiều neuron / hidden layer → MLP, học được ranh giới phi tuyến.
 4. So sánh dự đoán với nhãn qua loss.
 5. Điều chỉnh trọng số để loss giảm.
+
+Chi tiết forward / train: [`how-it-works.md`](./how-it-works.md), [`how-to-train.md`](./how-to-train.md).

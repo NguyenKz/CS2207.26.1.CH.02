@@ -1,6 +1,6 @@
 # Demo Artificial Neural Network
 
-Tài liệu này chuẩn bị cho phần thuyết trình về Artificial Neural Network (ANN). Mục tiêu là giúp người trình bày đi từ một neuron đơn giản đến một mạng nhiều lớp, sau đó minh họa quá trình huấn luyện bằng một notebook Python.
+Tài liệu này chuẩn bị cho phần thuyết trình về Artificial Neural Network (ANN). Mục tiêu là giúp người trình bày đi từ model tuyến tính đơn giản → một neuron + activation → mạng nhiều lớp, rồi minh họa huấn luyện bằng notebook Python.
 
 ## Mục tiêu của demo
 
@@ -19,7 +19,8 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 
 | Tài liệu | Mục đích |
 | --- | --- |
-| [`very-simple.md`](./gk/mds/very-simple.md) | Giải thích neuron bằng phép tính nhỏ có thể làm bằng tay |
+| [`very-simple-liner-model.md`](./gk/mds/very-simple-liner-model.md) | Model tuyến tính `z = w·x + b` qua ví dụ Đậu/Rớt, làm bằng tay |
+| [`very-simple-ann.md`](./gk/mds/very-simple-ann.md) | Từ `z` sang nhãn qua activation; 1 neuron / perceptron |
 | [`overview.md`](./gk/mds/overview.md) | Bức tranh tổng quan về ANN và các thành phần chính |
 | [`how-it-works.md`](./gk/mds/how-it-works.md) | Forward propagation, hidden layer và activation |
 | [`how-to-train.md`](./gk/mds/how-to-train.md) | Loss, gradient descent, backpropagation và đánh giá model |
@@ -31,12 +32,13 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 
 ## Lộ trình thực hiện
 
-1. Đọc các phần cơ bản về neuron, bias, activation và perceptron.
-2. Hiểu forward propagation, hidden layer và giới hạn của ranh giới tuyến tính.
-3. Chạy notebook với `make_moons`.
-4. So sánh logistic regression với `MLPClassifier`.
-5. Dùng decision boundary và loss curve làm hình ảnh chính khi thuyết trình.
-6. Nếu notebook đã ổn định, chuyển cùng luồng xử lý sang Streamlit.
+1. Đọc `very-simple-liner-model.md` rồi `very-simple-ann.md` (tính tay `w`, `b`, `z`, activation).
+2. Đọc `overview.md` để nối sang MLP, phi tuyến và giới hạn của perceptron.
+3. Hiểu forward propagation, hidden layer và ranh giới tuyến tính vs phi tuyến.
+4. Chạy notebook với `make_moons`.
+5. So sánh logistic regression với `MLPClassifier`.
+6. Dùng decision boundary và loss curve làm hình ảnh chính khi thuyết trình.
+7. Nếu notebook đã ổn định, chuyển cùng luồng xử lý sang Streamlit.
 
 ## Phạm vi hiện tại
 
@@ -48,4 +50,3 @@ Commit này chỉ chứa tài liệu Markdown và các liên kết tới tài li
 - [`gk/chap4_ann.pdf`](./gk/chap4_ann.pdf): perceptron, XOR, MLP, gradient descent và backpropagation.
 - [`gk/lecture-21.pdf`](./gk/lecture-21.pdf): logistic regression, MLP, activation, gradient descent và các lưu ý về deep learning.
 - [`gk/mit15_773_s24_lec01.pdf`](./gk/mit15_773_s24_lec01.pdf): hidden layer, activation và ví dụ tính forward pass.
-
