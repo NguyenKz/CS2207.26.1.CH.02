@@ -28,7 +28,7 @@ a = f(z)
 - `b` thay đổi điều gì?
 - `f` có vai trò gì?
 
-Đọc [`very-simple.md`](./very-simple.md).
+Đọc [`very-simple-liner-model.md`](./very-simple-liner-model.md) rồi [`very-simple-ann.md`](./very-simple-ann.md).
 
 ### Bước 2: Perceptron
 
@@ -38,7 +38,7 @@ Hiểu rằng perceptron đơn tạo ranh giới tuyến tính. Dùng XOR để 
 - Thử tưởng tượng một đường thẳng tách hai lớp.
 - Giải thích vì sao một đường thẳng không đủ.
 
-### Bước 3: Hidden layer
+### Bước 3: Hidden layer / n neuron
 
 Hiểu hidden layer tạo ra các output trung gian. Những output này được output layer kết hợp để tạo quyết định cuối.
 
@@ -46,7 +46,7 @@ Hiểu hidden layer tạo ra các output trung gian. Những output này đượ
 - Một neuron trong hidden layer nhận input từ đâu?
 - Nếu bỏ activation phi tuyến thì chuyện gì xảy ra?
 
-Đọc [`overview.md`](./overview.md) và [`how-it-works.md`](./how-it-works.md).
+Đọc [`very-simple-n-neurons.md`](./very-simple-n-neurons.md), rồi [`overview.md`](./overview.md) và [`how-it-works.md`](./how-it-works.md).
 
 ### Bước 4: Forward pass
 

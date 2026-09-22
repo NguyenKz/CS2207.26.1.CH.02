@@ -21,6 +21,7 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 | --- | --- |
 | [`very-simple-liner-model.md`](./gk/mds/very-simple-liner-model.md) | Model tuyến tính `z = w·x + b` qua ví dụ Đậu/Rớt, làm bằng tay |
 | [`very-simple-ann.md`](./gk/mds/very-simple-ann.md) | Từ `z` sang nhãn qua activation; 1 neuron / perceptron |
+| [`very-simple-n-neurons.md`](./gk/mds/very-simple-n-neurons.md) | n neuron: output nhiều lớp hoặc hidden layer nhỏ |
 | [`overview.md`](./gk/mds/overview.md) | Bức tranh tổng quan về ANN và các thành phần chính |
 | [`how-it-works.md`](./gk/mds/how-it-works.md) | Forward propagation, hidden layer và activation |
 | [`how-to-train.md`](./gk/mds/how-to-train.md) | Loss, gradient descent, backpropagation và đánh giá model |
@@ -32,7 +33,7 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 
 ## Lộ trình thực hiện
 
-1. Đọc `very-simple-liner-model.md` rồi `very-simple-ann.md` (tính tay `w`, `b`, `z`, activation).
+1. Đọc `very-simple-liner-model.md` → `very-simple-ann.md` → `very-simple-n-neurons.md` (tính tay `w`, `b`, `z`, 1 rồi n neuron).
 2. Đọc `overview.md` để nối sang MLP, phi tuyến và giới hạn của perceptron.
 3. Hiểu forward propagation, hidden layer và ranh giới tuyến tính vs phi tuyến.
 4. Chạy notebook với `make_moons`.

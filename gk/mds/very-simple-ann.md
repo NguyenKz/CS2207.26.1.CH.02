@@ -6,7 +6,7 @@
 
 - Bước đầu của ANN (1 neuron / perceptron) là: lấy `z`, rồi đưa qua 1 **activation function** để ra tín hiệu gắn với "Đậu"/"Rớt". Step function chính là if-else viết thành hàm; Sigmoid/Softmax thì ra xác suất, lúc lấy lớp cứng vẫn cần ngưỡng hoặc `argmax`.
 
-- 2 lớp Đậu/Rớt chỉ là ví dụ. Có thể là `["học sinh yếu", "học sinh trung bình", "học sinh giỏi"]` (**3 lớp**). ANN đầy đủ còn có thể xếp nhiều neuron / nhiều lớp; phần này mới chỉ nói 1 neuron.
+- 2 lớp Đậu/Rớt chỉ là ví dụ. Có thể là `["học sinh yếu", "học sinh trung bình", "học sinh giỏi"]` (**3 lớp**). Phần này mới chỉ nói 1 neuron; tiếp: [`very-simple-n-neurons.md`](./very-simple-n-neurons.md).
 
 ## Ý tưởng:
 
