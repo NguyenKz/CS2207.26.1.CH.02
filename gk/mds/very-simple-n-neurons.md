@@ -56,6 +56,6 @@ a_out = sigmoid(z_out)   # hoặc step(z_out)
 
 ## Cần nhớ:
 
-- **n neuron ≠ n lớp mạng**. n neuron thường là **chiều rộng** của một layer; **số layer** mới là độ sâu.
+- **n neuron ≠ n lớp mạng**. n neuron thường là **chiều rộng** của một layer; **số layer** mới là độ sâu → [`very-simple-depth.md`](./very-simple-depth.md).
 - 1 neuron = 1 đường thẳng / siêu phẳng. Nhiều neuron + activation phi tuyến mới ghép được ranh giới cong (XOR, `make_moons`, ...).
 - Phần sau (`overview.md`, `how-it-works.md`) nói rõ hơn về MLP và forward pass trên cả mạng.

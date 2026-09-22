@@ -10,7 +10,8 @@ Hai file này đi từ model tuyến tính tới 1 neuron, làm bằng tay trư�
 
 1. [`very-simple-liner-model.md`](./very-simple-liner-model.md): `z = w_1*x_1 + w_2*x_2 + b`, vì sao cần `b`, và `if z >= 0` để ra Đậu/Rớt.
 2. [`very-simple-ann.md`](./very-simple-ann.md): thay bước if bằng **activation function**; đây mới chỉ là 1 neuron / perceptron.
-3. [`very-simple-n-neurons.md`](./very-simple-n-neurons.md): n neuron cạnh nhau — Softmax nhiều lớp, hoặc hidden layer rồi mới quyết định.
+3. [`very-simple-n-neurons.md`](./very-simple-n-neurons.md): **chiều rộng** — n neuron cạnh nhau (Softmax nhiều lớp hoặc 1 hidden).
+4. [`very-simple-depth.md`](./very-simple-depth.md): **chiều sâu** — xếp nhiều layer nối tiếp; vì sao cần activation phi tuyến giữa các layer.
 
 File này (`overview.md`) bước tiếp: MLP đầy đủ hơn, phi tuyến, so sánh logistic regression, và giới hạn cần nói khi thuyết trình.
 

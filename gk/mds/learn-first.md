@@ -46,7 +46,7 @@ Hiểu hidden layer tạo ra các output trung gian. Những output này đượ
 - Một neuron trong hidden layer nhận input từ đâu?
 - Nếu bỏ activation phi tuyến thì chuyện gì xảy ra?
 
-Đọc [`very-simple-n-neurons.md`](./very-simple-n-neurons.md), rồi [`overview.md`](./overview.md) và [`how-it-works.md`](./how-it-works.md).
+Đọc [`very-simple-n-neurons.md`](./very-simple-n-neurons.md) (rộng) và [`very-simple-depth.md`](./very-simple-depth.md) (sâu), rồi [`overview.md`](./overview.md) và [`how-it-works.md`](./how-it-works.md).
 
 ### Bước 4: Forward pass
 
