@@ -34,7 +34,7 @@ L(B_T, sigma^2) = Π P(y_i | B_T, sigma^2)
 
 ```
 Hàm like hood là hàm của B_T và sigma^2.
-![LikeLyHood](./imgs/buoi_4.likelihood.png)
+![LikeLyHood](./imgs/buoi_5.likelihood.png)
 
 
 Do trong công thức likelihood có exp không tính được nên phải tìm cách biến đổi.
