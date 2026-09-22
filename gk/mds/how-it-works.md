@@ -35,6 +35,7 @@ Trong đó:
 - `W_2`, `b_2` nối hidden layer với output layer.
 - `f` là activation của hidden layer.
 - `g` là activation của output layer.
+- `y_hat` là giá trị dự đoán được.
 
 Khi có nhiều hidden layer, mẫu tính toán lặp lại:
 
