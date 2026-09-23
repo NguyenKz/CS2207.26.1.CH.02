@@ -1,15 +1,16 @@
 # Demo Artificial Neural Network
 
-Tài liệu này chuẩn bị cho phần thuyết trình về Artificial Neural Network (ANN). Mục tiêu là giúp người trình bày đi từ model tuyến tính đơn giản → một neuron + activation → mạng nhiều lớp, rồi minh họa huấn luyện bằng notebook Python.
+Tài liệu này chuẩn bị cho phần thuyết trình về Artificial Neural Network (ANN). Mục tiêu là giúp người trình bày đi từ model tuyến tính đơn giản → một neuron + activation → mạng nhiều lớp, rồi tự xây và huấn luyện một ANN bằng NumPy.
 
 ## Mục tiêu của demo
 
-Demo chính dùng dữ liệu hai chiều tạo bằng `make_moons` của scikit-learn. Người xem có thể nhìn thấy:
+Demo chính dùng dữ liệu Iris của scikit-learn, nhưng chỉ dùng scikit-learn để lấy dữ liệu. Model ANN được tự viết bằng NumPy. Người xem có thể nhìn thấy:
 
-- Logistic regression tạo một ranh giới tuyến tính.
-- MLP (Multi-Layer Perceptron) dùng hidden layer để học ranh giới phi tuyến.
-- Loss thay đổi trong quá trình huấn luyện.
-- Số neuron, activation function và mức nhiễu ảnh hưởng đến decision boundary.
+- Bốn số đo đi qua input layer, hidden layer và output layer.
+- Hidden layer có 8 neuron dùng `tanh`.
+- Output layer có 3 neuron dùng `softmax` cho ba loài hoa.
+- Code tự tính forward pass, cross-entropy loss, backpropagation và gradient descent.
+- Giao diện hiển thị input/output của từng layer cùng loss curve.
 
 XOR được dùng như ví dụ lý thuyết ngắn để giải thích vì sao một perceptron đơn không giải quyết được mọi bài toán phân loại.
 
@@ -37,14 +38,14 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 1. Đọc `very-simple-liner-model` → `very-simple-ann` → `very-simple-n-neurons` → `very-simple-depth` (1 neuron → rộng → sâu).
 2. Đọc `overview.md` để nối sang MLP, phi tuyến và giới hạn của perceptron.
 3. Hiểu forward propagation, hidden layer và ranh giới tuyến tính vs phi tuyến.
-4. Chạy notebook với `make_moons`.
-5. So sánh logistic regression với `MLPClassifier`.
-6. Dùng decision boundary và loss curve làm hình ảnh chính khi thuyết trình.
+4. Chạy notebook Iris với ANN tự viết bằng NumPy.
+5. Kiểm tra output của từng layer trên một mẫu hoa.
+6. Dùng sơ đồ `4 -> 8 -> 3`, loss curve và confusion matrix khi thuyết trình.
 7. Nếu notebook đã ổn định, chuyển cùng luồng xử lý sang Streamlit.
 
 ## Phạm vi hiện tại
 
-Commit này chỉ chứa tài liệu Markdown và các liên kết tới tài liệu nguồn. Chưa có file `.py`, `.ipynb`, HTML hay web app. Các con số như `n_samples=400` và `noise=0.20` trong tài liệu là tham số cấu hình cho demo, không phải kết quả thực nghiệm hay số liệu đánh giá.
+Commit này chỉ chứa tài liệu Markdown và các liên kết tới tài liệu nguồn. Chưa có file `.py`, `.ipynb`, HTML hay web app. Code trong `demo-directions.md` là blueprint để chuyển thành notebook chạy thật.
 
 ## Nguồn học tập
 
