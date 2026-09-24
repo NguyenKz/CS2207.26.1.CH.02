@@ -30,6 +30,7 @@ Thư mục này chứa phần giải thích, lộ trình học và thiết kế 
 
 - [`how-to-train.md`](./how-to-train.md)
 - [`simple-notebook-demo.md`](./simple-notebook-demo.md)
+- [`ann_from_scratch_demo.ipynb`](./ann_from_scratch_demo.ipynb)
 - [`learn-first.md`](./learn-first.md)
 
 ### Thiết kế demo

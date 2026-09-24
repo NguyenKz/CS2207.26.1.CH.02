@@ -28,10 +28,28 @@ Các tài liệu ANN nằm trong [`gk/mds/`](./gk/mds/).
 | [`how-it-works.md`](./gk/mds/how-it-works.md) | Forward propagation, hidden layer và activation |
 | [`how-to-train.md`](./gk/mds/how-to-train.md) | Loss, gradient descent, backpropagation và đánh giá model |
 | [`simple-notebook-demo.md`](./gk/mds/simple-notebook-demo.md) | Thiết kế notebook demo theo từng cell |
+| [`ann_from_scratch_demo.ipynb`](./gk/mds/ann_from_scratch_demo.ipynb) | Notebook chạy ANN tự viết bằng NumPy |
 | [`learn-first.md`](./gk/mds/learn-first.md) | Lộ trình học và checklist chuẩn bị thuyết trình |
 | [`demo-directions.md`](./gk/mds/demo-directions.md) | Các hướng demo, kịch bản chính và hướng mở rộng thành web app |
 
 Đọc [`gk/mds/README.md`](./gk/mds/README.md) để xem mục lục đầy đủ và nguồn PDF.
+
+## Chạy notebook
+
+Tạo virtual environment và cài dependency:
+
+```bash
+./setup_venv.sh
+source .venv/bin/activate
+```
+
+Mở notebook:
+
+```bash
+jupyter notebook gk/mds/ann_from_scratch_demo.ipynb
+```
+
+Kernel cần chọn trong Jupyter là `Python (CS2207 ANN)`.
 
 ## Lộ trình thực hiện
 

@@ -35,7 +35,7 @@ Model tự cài đặt:
 8. Vẽ loss curve và confusion matrix.
 9. Hiển thị giao diện demo với ba khu vực Input layer, Hidden layer và Output layer.
 
-Code đầy đủ cho các cell nằm trong [`demo-directions.md`](./demo-directions.md). File này giữ vai trò checklist để notebook không quay lại dùng `MLPClassifier` hoặc pipeline model có sẵn.
+Notebook chạy thật nằm ở [`ann_from_scratch_demo.ipynb`](./ann_from_scratch_demo.ipynb). File này giữ vai trò checklist để notebook không quay lại dùng `MLPClassifier` hoặc pipeline model có sẵn; phần giải thích chi tiết vẫn nằm trong [`demo-directions.md`](./demo-directions.md).
 
 ## Output bắt buộc khi chạy demo
 
