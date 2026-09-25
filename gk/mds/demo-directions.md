@@ -617,14 +617,13 @@ Nút nên đặt tên cụ thể là `Chạy forward pass` hoặc `Dự đoán m
 
 ## Hướng chuyển thành web app sau notebook
 
-Sau khi notebook Iris chạy ổn định, có thể chuyển cùng logic sang Streamlit. App chỉ cần có:
+Sau khi notebook Iris chạy ổn định, chuyển cùng logic sang web app React + FastAPI. Tab Train cần có:
 
-- bốn ô nhập số đo của hoa;
-- nút `Chạy forward pass`;
-- panel Input layer, Hidden layer và Output layer;
-- tên loài hoa được dự đoán;
-- xác suất của ba loài;
-- confusion matrix và loss curve của ANN tự viết.
+- sáu activation được train đồng thời;
+- delay giữa các epoch để quan sát loss;
+- panel Input → Hidden → Output → Loss → Backpropagation → Update;
+- card metrics riêng cho từng activation;
+- loss chart realtime và event log qua WebSocket.
 
 Không cần cho người dùng chỉnh quá nhiều tham số trong bản đầu tiên. Nếu có phần mở rộng, có thể cho chọn Logistic Regression hoặc MLP để so sánh.
 
@@ -642,5 +641,5 @@ Không cần cho người dùng chỉnh quá nhiều tham số trong bản đầ
 2. Chuẩn bị một slide ngắn giải thích input, hidden layer và output.
 3. Dùng `make_moons` như hình minh họa bổ sung cho ranh giới phi tuyến.
 4. Thêm XOR nếu cần mở đầu phần perceptron.
-5. Chỉ sau đó mới chuyển notebook thành Streamlit.
+5. Chỉ sau đó mới bổ sung tab Predict vào web app.
 6. Không thêm dataset khác nếu chưa có câu hỏi thuyết trình rõ ràng.
