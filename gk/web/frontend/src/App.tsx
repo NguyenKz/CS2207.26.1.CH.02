@@ -161,10 +161,16 @@ function Sparkline({
     .join(" ");
 
   return (
-    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label}>
-      <line x1="0" y1={height - 1} x2={width} y2={height - 1} className="sparkline-baseline" vectorEffect="non-scaling-stroke" />
-      {polyline && <polyline points={polyline} fill="none" stroke={color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />}
-    </svg>
+    <div className="sparkline-frame">
+      <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label}>
+        <line x1="0" y1="0" x2="0" y2={height - 1} className="sparkline-axis" vectorEffect="non-scaling-stroke" />
+        <line x1="0" y1={height - 1} x2={width} y2={height - 1} className="sparkline-baseline" vectorEffect="non-scaling-stroke" />
+        {polyline && <polyline points={polyline} fill="none" stroke={color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />}
+      </svg>
+      <span className="sparkline-max-label">{max.toFixed(2)}</span>
+      <span className="sparkline-y-label">loss</span>
+      <span className="sparkline-x-label">epoch</span>
+    </div>
   );
 }
 
@@ -199,8 +205,10 @@ function LossChart({
         <line x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} className="chart-axis" />
         <text x={padding.left - 12} y={padding.top + 4} className="chart-label" textAnchor="end">{maxValue.toFixed(2)}</text>
         <text x={padding.left - 12} y={height - padding.bottom + 4} className="chart-label" textAnchor="end">{minValue.toFixed(2)}</text>
+        <text x="13" y={height / 2} className="chart-axis-title" textAnchor="middle" transform={`rotate(-90 13 ${height / 2})`}>Loss (cross-entropy)</text>
         <text x={padding.left} y={height - 10} className="chart-label">epoch 0</text>
         <text x={width - padding.right} y={height - 10} className="chart-label" textAnchor="end">epoch {maxEpoch}</text>
+        <text x={width / 2} y={height - 1} className="chart-axis-title" textAnchor="middle">Epoch</text>
         {ACTIVATIONS.map((activation) => {
           if (!visibleActivations.has(activation)) return null;
           const points = histories[activation];
@@ -264,6 +272,7 @@ function ActivationCard({
   history: LossPoint[];
 }): ReactElement {
   const progress = metric.totalEpochs ? (metric.epoch / metric.totalEpochs) * 100 : 0;
+  const maxTrainingLoss = history.length ? Math.max(...history.map((point) => point.trainingLoss)) : null;
   return (
     <article className={`activation-card activation-${activation}`}>
       <div className="card-topline">
@@ -276,7 +285,7 @@ function ActivationCard({
       <div className="progress-track" aria-label={`${ACTIVATION_LABELS[activation]} progress`}>
         <span style={{ width: `${progress}%`, backgroundColor: ACTIVATION_COLORS[activation] }} />
       </div>
-      <div className="card-epoch"><strong>{metric.epoch}</strong><span>/ {metric.totalEpochs} epochs</span></div>
+      <div className="card-epoch"><strong>{metric.epoch}</strong><span>/ {metric.totalEpochs} epochs</span><span className="card-max-loss">max loss {formatLoss(maxTrainingLoss)}</span></div>
       <Sparkline points={history} color={ACTIVATION_COLORS[activation]} label={`${ACTIVATION_LABELS[activation]} training loss`} />
       <div className="metric-grid">
         <div><span>train loss</span><strong>{formatLoss(metric.trainingLoss)}</strong></div>
@@ -294,7 +303,6 @@ function App(): ReactElement {
   const [metrics, setMetrics] = useState<Record<ActivationName, Metric>>(() => createInitialMetrics(DEFAULT_CONFIG.epochs));
   const [histories, setHistories] = useState<Record<ActivationName, LossPoint[]>>(() => createInitialHistory());
   const [visibleActivations, setVisibleActivations] = useState<Set<ActivationName>>(() => new Set(ACTIVATIONS));
-  const [eventLog, setEventLog] = useState<SocketMessage[]>([]);
   const [summary, setSummary] = useState<{ durationMs: number; results: SummaryResult[] } | null>(null);
   const [datasetShapes, setDatasetShapes] = useState<string>("90 train · 30 validation · 30 test");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -310,7 +318,6 @@ function App(): ReactElement {
   }, [runState]);
 
   const handleMessage = (message: SocketMessage) => {
-    setEventLog((current) => [message, ...current].slice(0, 80));
     if (message.type === "run_started") {
       setRunState("running");
       setErrorMessage(null);
@@ -366,7 +373,6 @@ function App(): ReactElement {
     if (runState === "running" || runState === "connecting") return;
     setMetrics(createInitialMetrics(runConfig.epochs));
     setHistories(createInitialHistory());
-    setEventLog([]);
     setSummary(null);
     setErrorMessage(null);
     setRunState("connecting");
@@ -405,7 +411,6 @@ function App(): ReactElement {
     setConnectionState("disconnected");
     setMetrics(createInitialMetrics(runConfig.epochs));
     setHistories(createInitialHistory());
-    setEventLog([]);
     setSummary(null);
     setErrorMessage(null);
   };
@@ -452,7 +457,7 @@ function App(): ReactElement {
           <section className="control-panel" aria-label="Training controls">
             <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong></div>
             <label>Epochs<input type="number" min="1" max="5000" value={runConfig.epochs} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, epochs: Number(event.target.value) })} /></label>
-            <label>Delay per epoch<select value={runConfig.delay_seconds} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.01">0.01s</option><option value="0.1">0.1s</option><option value="0.5">0.5s</option></select></label>
+            <label>Delay per epoch<select value={runConfig.delay_seconds} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.001">0.001s</option><option value="0.01">0.01s</option><option value="0.05">0.05s</option><option value="0.1">0.1s</option></select></label>
             <label>Learning rate<input type="number" min="0.001" max="1" step="0.01" value={runConfig.learning_rate} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, learning_rate: Number(event.target.value) })} /></label>
             <div className="control-actions"><button className="button button-primary" type="button" onClick={handleStart} disabled={runState === "running" || runState === "connecting"}>Start training</button><button className="button button-quiet" type="button" onClick={handleCancel} disabled={runState !== "running"}>Cancel</button><button className="button button-quiet" type="button" onClick={handleReset}>Reset</button></div>
             {errorMessage && <p className="error-note" role="alert">{errorMessage}</p>}
@@ -472,7 +477,6 @@ function App(): ReactElement {
 
         <section className="lower-grid">
           <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curves are moving?</h2></div><p>Click a label to isolate a learner.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
-          <div className="log-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">EVENT STREAM</div><h2>What just happened?</h2></div><span className="log-count">{eventLog.length} events</span></div><div className="event-log">{eventLog.length === 0 ? <div className="empty-log"><strong>Chưa có event</strong><span>Start training để xem từng epoch đi qua pipeline.</span></div> : eventLog.slice(0, 18).map((event, index) => <div className="event-row" key={`${event.type}-${event.activation ?? "run"}-${event.epoch ?? index}-${index}`}><span className="event-type">{event.type.replace("_", " ")}</span><strong>{event.activation ?? "system"}</strong><span>{event.epoch ? `epoch ${event.epoch}` : event.message ?? "run state"}</span>{event.training_loss !== undefined && <code>{event.training_loss.toFixed(4)}</code>}</div>)}</div></div>
           {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">The run is measurable, not magical.</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>t acc <b>{formatAccuracy(result.test_accuracy)}</b></span></div>)}</div><p className="summary-note">Highlighted means lowest validation loss in this run on Iris. It is not a universal ranking of activation functions.</p></section>}
         </section>
       </div>

@@ -70,7 +70,7 @@ npm install
 npm run dev
 ```
 
-Mở `http://localhost:5113`. Chọn delay `0.1s` hoặc `0.5s` để nhìn rõ từng epoch, loss và validation accuracy của mỗi activation.
+Mở `http://localhost:5113`. Chọn delay `0.01s`, `0.05s` hoặc `0.1s` để nhìn rõ từng epoch, loss và validation accuracy của mỗi activation.
 
 Hoặc chạy cả backend và frontend bằng một lệnh:
 
