@@ -142,7 +142,7 @@ Trong phần trình chiếu, nên hiện sơ đồ này trước khi chạy code
 
 1. Giới thiệu câu hỏi: từ số đo của một bông hoa, model dự đoán loài hoa nào?
 2. Hiển thị vài mẫu dữ liệu và giải thích bốn feature cùng nhãn đúng.
-3. Chia dữ liệu thành training set và test set.
+3. Chia dữ liệu thành training, validation và test set.
 4. Khởi tạo ANN 4 -> 8 -> 3 bằng NumPy.
 5. Tự chạy forward pass, cross-entropy loss, backpropagation và gradient descent.
 6. Nhập hoặc chọn một mẫu hoa trong test set, rồi hiển thị output của từng layer.
@@ -177,24 +177,35 @@ target_labels = iris_dataset.target
 # Dùng random generator riêng để lần chạy lại có cùng cách chia dữ liệu.
 random_generator = np.random.default_rng(42)
 training_indices_by_class = []
+validation_indices_by_class = []
 testing_indices_by_class = []
 
-# Giữ 75% của mỗi lớp cho training để cả ba loài đều có trong hai tập.
+# Giữ 60% train, 20% validation và 20% test của mỗi lớp.
 for class_label in np.unique(target_labels):
     class_indices = np.flatnonzero(target_labels == class_label)
     random_generator.shuffle(class_indices)
-    training_sample_count = int(0.75 * len(class_indices))
+    training_sample_count = int(0.60 * len(class_indices))
+    validation_sample_count = int(0.20 * len(class_indices))
     training_indices_by_class.append(class_indices[:training_sample_count])
-    testing_indices_by_class.append(class_indices[training_sample_count:])
+    validation_indices_by_class.append(
+        class_indices[training_sample_count:training_sample_count + validation_sample_count]
+    )
+    testing_indices_by_class.append(
+        class_indices[training_sample_count + validation_sample_count:]
+    )
 
 training_indices = np.concatenate(training_indices_by_class)
+validation_indices = np.concatenate(validation_indices_by_class)
 testing_indices = np.concatenate(testing_indices_by_class)
 random_generator.shuffle(training_indices)
+random_generator.shuffle(validation_indices)
 random_generator.shuffle(testing_indices)
 
 # Giữ giá trị gốc cho giao diện. Model sẽ nhận bản đã chuẩn hóa bên dưới.
 training_features_raw = feature_matrix[training_indices]
 training_labels = target_labels[training_indices]
+validation_features_raw = feature_matrix[validation_indices]
+validation_labels = target_labels[validation_indices]
 testing_features_raw = feature_matrix[testing_indices]
 testing_labels = target_labels[testing_indices]
 
@@ -202,10 +213,11 @@ testing_labels = target_labels[testing_indices]
 training_feature_means = training_features_raw.mean(axis=0)
 training_feature_stds = training_features_raw.std(axis=0)
 training_features = (training_features_raw - training_feature_means) / training_feature_stds
+validation_features = (validation_features_raw - training_feature_means) / training_feature_stds
 testing_features = (testing_features_raw - training_feature_means) / training_feature_stds
 ```
 
-Điểm cần nói: mỗi hàng của `feature_matrix` là bốn số đo của một bông hoa, còn `target_labels` là loài hoa đúng. Mean và standard deviation chỉ được tính từ training set.
+Điểm cần nói: mỗi hàng của `feature_matrix` là bốn số đo của một bông hoa, còn `target_labels` là loài hoa đúng. Validation dùng để theo dõi model trong lúc phát triển; test chỉ dùng ở cuối. Mean và standard deviation chỉ được tính từ training set.
 
 #### Cell 3: chuẩn bị nhãn one-hot
 
@@ -217,6 +229,7 @@ def one_hot_encode(class_labels, number_of_classes):
     return encoded_labels
 
 training_one_hot_labels = one_hot_encode(training_labels, number_of_classes=3)
+validation_one_hot_labels = one_hot_encode(validation_labels, number_of_classes=3)
 ```
 
 ANN dùng one-hot target để so sánh xác suất dự đoán của ba output neuron với nhãn đúng.
@@ -254,6 +267,8 @@ class SimpleANN:
         self.learning_rate = learning_rate
         # Giao diện vẽ danh sách này để cho thấy training có làm loss giảm không.
         self.loss_history = []
+        self.validation_loss_history = []
+        self.validation_accuracy_history = []
 
     def forward(self, input_features):
         # Hidden layer: bốn input được biến đổi thành tám giá trị trung gian.
@@ -276,7 +291,14 @@ class SimpleANN:
         }
         return output_probabilities, forward_cache
 
-    def fit(self, input_features, one_hot_targets, epochs=2000):
+    def fit(
+        self,
+        input_features,
+        one_hot_targets,
+        epochs=2000,
+        validation_features=None,
+        validation_one_hot_targets=None,
+    ):
         training_sample_count = input_features.shape[0]
 
         # Demo dùng full-batch gradient descent: mỗi lần update nhìn toàn bộ training set.
@@ -332,6 +354,27 @@ class SimpleANN:
                 self.learning_rate * hidden_layer_bias_gradients
             )
 
+            # Validation chỉ đo khả năng tổng quát hóa, không tạo gradient update.
+            if validation_features is not None and validation_one_hot_targets is not None:
+                validation_probabilities = self.predict_proba(validation_features)
+                clipped_validation_probabilities = np.clip(
+                    validation_probabilities, 1e-12, 1.0
+                )
+                validation_loss = -np.mean(
+                    np.sum(
+                        validation_one_hot_targets
+                        * np.log(clipped_validation_probabilities),
+                        axis=1,
+                    )
+                )
+                validation_predictions = validation_probabilities.argmax(axis=1)
+                validation_labels = validation_one_hot_targets.argmax(axis=1)
+                validation_accuracy = np.mean(
+                    validation_predictions == validation_labels
+                )
+                self.validation_loss_history.append(validation_loss)
+                self.validation_accuracy_history.append(validation_accuracy)
+
         return self
 
     def predict_proba(self, input_features):
@@ -354,12 +397,20 @@ class SimpleANN:
         }
 
 
-# Train ANN tự viết trước khi đánh giá trên các mẫu test chưa được dùng để học.
+# Train ANN tự viết; validation được đo sau mỗi epoch, test vẫn để dành cho cuối.
 neural_network = SimpleANN()
-neural_network.fit(training_features, training_one_hot_labels)
+neural_network.fit(
+    training_features,
+    training_one_hot_labels,
+    validation_features=validation_features,
+    validation_one_hot_targets=validation_one_hot_labels,
+)
 
+validation_predictions = neural_network.predict(validation_features)
+validation_accuracy = np.mean(validation_predictions == validation_labels)
 testing_predictions = neural_network.predict(testing_features)
 testing_accuracy = np.mean(testing_predictions == testing_labels)
+print("ANN validation accuracy:", validation_accuracy)
 print("ANN test accuracy:", testing_accuracy)
 ```
 
@@ -450,15 +501,17 @@ for name, probability in zip(iris_dataset.target_names, class_probabilities):
 ```python
 # Đường cong giảm nghĩa là objective dùng để update đang nhỏ dần.
 plt.figure(figsize=(7, 4))
-plt.plot(neural_network.loss_history)
+plt.plot(neural_network.loss_history, label="Training loss")
+plt.plot(neural_network.validation_loss_history, label="Validation loss")
 plt.xlabel("Training iteration")
 plt.ylabel("Loss")
-plt.title("ANN loss curve")
+plt.title("ANN training and validation loss")
+plt.legend()
 plt.grid(alpha=0.25)
 plt.show()
 ```
 
-Loss curve cho thấy cross-entropy loss thay đổi trong quá trình code tự cập nhật weights. Đây không phải đồ thị accuracy và không thay thế cho việc đánh giá trên test set.
+Loss curve cho thấy cross-entropy loss trên training và validation thay đổi trong quá trình code tự cập nhật weights. Đây không phải đồ thị accuracy; test set vẫn chỉ dùng sau khi hoàn thành training.
 
 #### Cell 7: confusion matrix
 
@@ -473,7 +526,7 @@ plt.xticks(range(3), iris_dataset.target_names)
 plt.yticks(range(3), iris_dataset.target_names)
 plt.xlabel("Predicted")
 plt.ylabel("Actual")
-plt.title("ANN confusion matrix")
+plt.title("ANN test confusion matrix")
 for actual_class in range(3):
     for predicted_class in range(3):
         plt.text(
