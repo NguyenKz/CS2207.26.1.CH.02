@@ -8,6 +8,9 @@ const ACTIVATIONS = [
   "softplus",
   "identity",
 ] as const;
+const CLASS_COUNT = 3;
+const SAMPLES_PER_CLASS = 1000;
+const DEFAULT_SAMPLE_COUNT = CLASS_COUNT * SAMPLES_PER_CLASS;
 
 type ActivationName = (typeof ACTIVATIONS)[number];
 type RunState = "idle" | "connecting" | "running" | "completed" | "cancelled" | "error";
@@ -17,6 +20,13 @@ type RunConfig = {
   epochs: number;
   delay_seconds: number;
   learning_rate: number;
+  difficulty: number;
+  sample_count: number;
+  batch_size: number;
+  train_percentage: number;
+  validation_percentage: number;
+  test_percentage: number;
+  holdout_percentage: number;
   hidden_neuron_count: number;
   random_seed: number;
   early_stopping: boolean;
@@ -44,6 +54,7 @@ type SummaryResult = {
   activation: ActivationName;
   epochs_completed: number;
   test_accuracy: number;
+  holdout_accuracy?: number;
   training_loss: number | null;
   validation_loss: number | null;
   validation_accuracy: number | null;
@@ -62,11 +73,21 @@ type SocketMessage = {
   status?: Metric["status"] | "completed";
   message?: string;
   duration_ms?: number;
+  difficulty?: number;
+  sample_count?: number;
+  class_count?: number;
+  samples_per_class?: number;
+  batch_size?: number;
+  train_percentage?: number;
+  validation_percentage?: number;
+  test_percentage?: number;
+  holdout_percentage?: number;
   results?: SummaryResult[];
   dataset?: {
     training: number[];
     validation: number[];
     testing: number[];
+    holdout?: number[];
   };
 };
 
@@ -74,6 +95,13 @@ const DEFAULT_CONFIG: RunConfig = {
   epochs: 2000,
   delay_seconds: 0.001,
   learning_rate: 0.05,
+  difficulty: 0.5,
+  sample_count: DEFAULT_SAMPLE_COUNT,
+  batch_size: 32,
+  train_percentage: 60,
+  validation_percentage: 15,
+  test_percentage: 15,
+  holdout_percentage: 10,
   hidden_neuron_count: 8,
   random_seed: 42,
   early_stopping: false,
@@ -125,8 +153,14 @@ function formatLoss(value: number | null): string {
   return value === null ? "—" : value.toFixed(4);
 }
 
-function formatAccuracy(value: number | null): string {
-  return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+function formatAccuracy(value: number | null | undefined): string {
+  return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
+function difficultyDescription(difficulty: number): string {
+  if (difficulty < 0.34) return "Ít noise · lớp dễ tách";
+  if (difficulty < 0.67) return "Noise vừa · ranh giới khó hơn";
+  return "Nhiều noise · lớp chồng lấn";
 }
 
 function StatusMark({ status }: { status: Metric["status"] }): ReactElement {
@@ -161,10 +195,10 @@ function Sparkline({
   const width = 280;
   const height = 48;
   const toPoint = (value: number, index: number): string => {
-      const x = points.length === 1 ? width : (index / (points.length - 1)) * width;
-      const y = height - ((value - min) / range) * (height - 6) - 3;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    };
+    const x = points.length === 1 ? width : (index / (points.length - 1)) * width;
+    const y = height - ((value - min) / range) * (height - 6) - 3;
+    return `${x.toFixed(2)},${y.toFixed(2)}`;
+  };
   const trainingPolyline = points.map((point, index) => toPoint(point.trainingLoss, index)).join(" ");
   const validationPolyline = points.map((point, index) => toPoint(point.validationLoss, index)).join(" ");
 
@@ -314,9 +348,11 @@ function App(): ReactElement {
   const [histories, setHistories] = useState<Record<ActivationName, LossPoint[]>>(() => createInitialHistory());
   const [visibleActivations, setVisibleActivations] = useState<Set<ActivationName>>(() => new Set(ACTIVATIONS));
   const [summary, setSummary] = useState<{ durationMs: number; results: SummaryResult[] } | null>(null);
-  const [datasetShapes, setDatasetShapes] = useState<string>("90 train · 30 validation · 30 test");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const controlsDisabled = runState === "running" || runState === "connecting";
+  const splitPercentageTotal = runConfig.train_percentage + runConfig.validation_percentage + runConfig.test_percentage + runConfig.holdout_percentage;
+  const splitIsValid = Math.abs(splitPercentageTotal - 100) < 0.001;
 
   const currentEpoch = Math.max(...ACTIVATIONS.map((activation) => metrics[activation].epoch));
   const statusText = useMemo(() => {
@@ -331,9 +367,18 @@ function App(): ReactElement {
     if (message.type === "run_started") {
       setRunState("running");
       setErrorMessage(null);
-      if (message.dataset) {
-        setDatasetShapes(`${message.dataset.training[0]} train · ${message.dataset.validation[0]} validation · ${message.dataset.testing[0]} test`);
+      if (message.difficulty !== undefined) {
+        setRunConfig((current) => ({ ...current, difficulty: message.difficulty! }));
       }
+      setRunConfig((current) => ({
+        ...current,
+        ...(message.sample_count === undefined ? {} : { sample_count: message.sample_count }),
+        ...(message.batch_size === undefined ? {} : { batch_size: message.batch_size }),
+        ...(message.train_percentage === undefined ? {} : { train_percentage: message.train_percentage }),
+        ...(message.validation_percentage === undefined ? {} : { validation_percentage: message.validation_percentage }),
+        ...(message.test_percentage === undefined ? {} : { test_percentage: message.test_percentage }),
+        ...(message.holdout_percentage === undefined ? {} : { holdout_percentage: message.holdout_percentage }),
+      }));
       return;
     }
     if (message.type === "epoch_update" && message.activation) {
@@ -454,7 +499,7 @@ function App(): ReactElement {
         <header className="topbar">
           <div className="brand-lockup">
             <div className="brand-mark">ANN</div>
-            <div><strong>Training Lab</strong><span>NumPy from scratch · Iris</span></div>
+            <div><strong>Training Lab</strong><span>NumPy from scratch · make_classification</span></div>
           </div>
           <nav className="tabs" aria-label="Demo sections">
             <button className="tab tab-active" type="button">Train</button>
@@ -467,18 +512,28 @@ function App(): ReactElement {
           <div className="lesson-intro">
             <div className="lesson-copy">
               <div className="section-kicker">LESSON 01 / TRAINING</div>
-              <h1>Watch the network learn.</h1>
+              <h1>Watch</h1>
               <p className="intro-copy">Six activation functions. One dataset. Every forward pass, loss and weight update visible as it happens.</p>
             </div>
-            <div className="intro-meta"><span className="meta-label">MODEL</span><strong>4 → 8 → 3</strong><span>{datasetShapes}</span></div>
           </div>
 
           <section className="control-panel" aria-label="Training controls">
-            <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Dừng nếu validation loss không giảm ≥ {runConfig.early_stopping_min_delta} trong {runConfig.early_stopping_patience} epoch liên tiếp.</small></label></div>
-            <label>Epochs<input type="number" min="1" max="5000" value={runConfig.epochs} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, epochs: Number(event.target.value) })} /></label>
-            <label>Delay per epoch<select value={runConfig.delay_seconds} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.001">0.001s</option><option value="0.01">0.01s</option><option value="0.05">0.05s</option><option value="0.1">0.1s</option></select></label>
-            <label>Learning rate<input type="number" min="0.001" max="1" step="0.01" value={runConfig.learning_rate} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, learning_rate: Number(event.target.value) })} /></label>
-            <div className="control-actions"><button className="button button-primary" type="button" onClick={handleStart} disabled={runState === "running" || runState === "connecting"}>Start training</button><button className="button button-quiet" type="button" onClick={handleCancel} disabled={runState !== "running"}>Cancel</button><button className="button button-quiet" type="button" onClick={handleReset}>Reset</button></div>
+            <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Dừng nếu validation loss không giảm ≥ {runConfig.early_stopping_min_delta} trong {runConfig.early_stopping_patience} epoch liên tiếp.</small></label></div>
+            <label className="difficulty-field">Difficulty <output>{Math.round(runConfig.difficulty * 100)}%</output><input className="difficulty-range" type="range" min="0" max="100" step="1" value={Math.round(runConfig.difficulty * 100)} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, difficulty: Number(event.target.value) / 100 })} /><span className="difficulty-endpoints"><span>Easy</span><span>Hard</span></span><small>{difficultyDescription(runConfig.difficulty)}</small></label>
+            <div className="dataset-settings" aria-label="Dataset settings">
+              <label>Total<input type="number" min="30" max="10000" step="10" value={runConfig.sample_count} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, sample_count: Number(event.target.value) })} /></label>
+              <label>Train %<input type="number" min="1" max="98" value={runConfig.train_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, train_percentage: Number(event.target.value) })} /></label>
+              <label>Val %<input type="number" min="1" max="98" value={runConfig.validation_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, validation_percentage: Number(event.target.value) })} /></label>
+              <label>Test %<input type="number" min="1" max="98" value={runConfig.test_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, test_percentage: Number(event.target.value) })} /></label>
+              <label>Final %<input type="number" min="1" max="98" value={runConfig.holdout_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, holdout_percentage: Number(event.target.value) })} /></label>
+              <small className="dataset-count-note">default: {CLASS_COUNT} classes × {SAMPLES_PER_CLASS} = {DEFAULT_SAMPLE_COUNT}</small>
+              <small className={splitIsValid ? "split-valid" : "split-invalid"}>sum {splitPercentageTotal}%</small>
+            </div>
+            <label className="batch-field">Batch size<input type="number" min="1" max={runConfig.sample_count} value={runConfig.batch_size} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, batch_size: Number(event.target.value) })} /></label>
+            <label className="epochs-field">Epochs<input type="number" min="1" max="5000" value={runConfig.epochs} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, epochs: Number(event.target.value) })} /></label>
+            <label className="delay-field">Delay per epoch<select value={runConfig.delay_seconds} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.001">0.001s</option><option value="0.01">0.01s</option><option value="0.05">0.05s</option><option value="0.1">0.1s</option></select></label>
+            <label className="learning-field">Learning rate<input type="number" min="0.001" max="1" step="0.01" value={runConfig.learning_rate} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, learning_rate: Number(event.target.value) })} /></label>
+            <div className="control-actions"><button className="button button-primary" type="button" onClick={handleStart} disabled={controlsDisabled || !splitIsValid}>Start training</button><button className="button button-quiet" type="button" onClick={handleCancel} disabled={runState !== "running"}>Cancel</button><button className="button button-quiet" type="button" onClick={handleReset}>Reset</button></div>
             {errorMessage && <p className="error-note" role="alert">{errorMessage}</p>}
           </section>
         </div>
@@ -496,7 +551,7 @@ function App(): ReactElement {
 
         <section className="lower-grid">
           <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curves are moving?</h2></div><p>Click a label to isolate a learner.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
-          {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">The run is measurable, not magical.</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>t acc <b>{formatAccuracy(result.test_accuracy)}</b></span></div>)}</div><p className="summary-note">Highlighted means lowest validation loss in this run on Iris. It is not a universal ranking of activation functions.</p></section>}
+          {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">The run is measurable, not magical.</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Final accuracy uses the holdout set only after training; it never updates weights or early stopping.</p></section>}
         </section>
       </div>
 

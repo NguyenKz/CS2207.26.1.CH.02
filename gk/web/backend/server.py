@@ -9,9 +9,16 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .ann_core import SUPPORTED_ACTIVATIONS, SimpleANN, prepare_iris_data
+from .ann_core import (
+    CLASS_COUNT,
+    DEFAULT_SAMPLE_COUNT,
+    SAMPLES_PER_CLASS,
+    SUPPORTED_ACTIVATIONS,
+    SimpleANN,
+    prepare_classification_data,
+)
 
 app = FastAPI(title="ANN Training Lab")
 app.add_middleware(
@@ -27,6 +34,13 @@ class TrainConfig(BaseModel):
     epochs: int = Field(default=2000, ge=1, le=500000)
     delay_seconds: float = Field(default=0.001, ge=0.0, le=2.0)
     learning_rate: float = Field(default=0.05, gt=0.0, le=1.0)
+    difficulty: float = Field(default=0.5, ge=0.0, le=1.0)
+    sample_count: int = Field(default=DEFAULT_SAMPLE_COUNT, ge=30, le=10000)
+    batch_size: int = Field(default=32, ge=1, le=10000)
+    train_percentage: float = Field(default=60.0, gt=0.0, lt=100.0)
+    validation_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
+    test_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
+    holdout_percentage: float = Field(default=10.0, gt=0.0, lt=100.0)
     hidden_neuron_count: int = Field(default=8, ge=1, le=32)
     random_seed: int = 42
     early_stopping: bool = False
@@ -44,6 +58,18 @@ class TrainConfig(BaseModel):
             raise ValueError(f"Unsupported activations: {sorted(unsupported)}")
         return value
 
+    @model_validator(mode="after")
+    def validate_dataset_split(self) -> "TrainConfig":
+        split_total = (
+            self.train_percentage
+            + self.validation_percentage
+            + self.test_percentage
+            + self.holdout_percentage
+        )
+        if abs(split_total - 100.0) > 1e-6:
+            raise ValueError("all dataset percentages must sum to 100")
+        return self
+
 
 def validation_error_message(error: Exception) -> str:
     return f"Invalid training configuration: {error}"
@@ -59,7 +85,7 @@ async def train_activation(
     model = SimpleANN(
         input_feature_count=4,
         hidden_neuron_count=config.hidden_neuron_count,
-        output_class_count=3,
+        output_class_count=CLASS_COUNT,
         learning_rate=config.learning_rate,
         random_seed=config.random_seed,
         hidden_activation_name=activation_name,
@@ -82,6 +108,7 @@ async def train_activation(
         training_loss = model.train_epoch(
             data.training_features,
             data.training_one_hot_labels,
+            batch_size=config.batch_size,
         )
         validation_loss, validation_accuracy = model.evaluate(
             data.validation_features,
@@ -121,10 +148,14 @@ async def train_activation(
     test_accuracy = float(
         (model.predict(data.testing_features) == data.testing_labels).mean()
     )
+    holdout_accuracy = float(
+        (model.predict(data.holdout_features) == data.holdout_labels).mean()
+    )
     return {
         "activation": activation_name,
         "epochs_completed": completed_epochs,
         "test_accuracy": test_accuracy,
+        "holdout_accuracy": holdout_accuracy,
         "stopped_early": stopped_early,
         **last_metrics,
     }
@@ -137,7 +168,15 @@ async def stream_training(
 ) -> None:
     run_id = str(uuid.uuid4())
     started_at = time.perf_counter()
-    data = prepare_iris_data(config.random_seed)
+    data = prepare_classification_data(
+        random_seed=config.random_seed,
+        difficulty=config.difficulty,
+        sample_count=config.sample_count,
+        train_percentage=config.train_percentage,
+        validation_percentage=config.validation_percentage,
+        test_percentage=config.test_percentage,
+        holdout_percentage=config.holdout_percentage,
+    )
     event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     await websocket.send_json(
@@ -147,6 +186,15 @@ async def stream_training(
             "activations": config.activations,
             "total_epochs": config.epochs,
             "delay_seconds": config.delay_seconds,
+            "difficulty": config.difficulty,
+            "sample_count": config.sample_count,
+            "class_count": CLASS_COUNT,
+            "samples_per_class": SAMPLES_PER_CLASS,
+            "batch_size": config.batch_size,
+            "train_percentage": config.train_percentage,
+            "validation_percentage": config.validation_percentage,
+            "test_percentage": config.test_percentage,
+            "holdout_percentage": config.holdout_percentage,
             "early_stopping": config.early_stopping,
             "early_stopping_patience": config.early_stopping_patience,
             "early_stopping_min_delta": config.early_stopping_min_delta,
@@ -154,6 +202,7 @@ async def stream_training(
                 "training": list(data.training_features.shape),
                 "validation": list(data.validation_features.shape),
                 "testing": list(data.testing_features.shape),
+                "holdout": list(data.holdout_features.shape),
             },
         }
     )

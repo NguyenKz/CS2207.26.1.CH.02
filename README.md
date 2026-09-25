@@ -4,7 +4,7 @@ Tài liệu này chuẩn bị cho phần thuyết trình về Artificial Neural 
 
 ## Mục tiêu của demo
 
-Demo chính dùng dữ liệu Iris của scikit-learn, nhưng chỉ dùng scikit-learn để lấy dữ liệu. Model ANN được tự viết bằng NumPy. Người xem có thể nhìn thấy:
+Demo notebook dùng dữ liệu Iris để giữ ví dụ gần gũi. Web demo dùng `make_classification` của scikit-learn để tạo nhiều mẫu với độ khó điều chỉnh được; scikit-learn chỉ tạo dữ liệu, còn model ANN được tự viết bằng NumPy. Người xem có thể nhìn thấy:
 
 - Bốn số đo đi qua input layer, hidden layer và output layer.
 - Hidden layer có 8 neuron, cho phép so sánh `tanh`, `sigmoid`, `ReLU`, `Leaky ReLU`, `softplus` và `identity`.
@@ -53,7 +53,7 @@ Kernel cần chọn trong Jupyter là `Python (CS2207 ANN)`.
 
 ## Chạy web demo realtime
 
-Web demo có tab `Train`, dùng React + TypeScript ở frontend và FastAPI + NumPy ở backend. Sáu activation (`tanh`, `sigmoid`, `ReLU`, `Leaky ReLU`, `softplus`, `identity`) được train đồng thời; delay chỉ làm chậm event để dễ quan sát, không làm model học tốt hơn. Có thể bật `Early stopping` để dừng từng activation khi validation loss không cải thiện trong 40 epoch.
+Web demo có tab `Train`, dùng React + TypeScript ở frontend và FastAPI + NumPy ở backend. Sáu activation (`tanh`, `sigmoid`, `ReLU`, `Leaky ReLU`, `softplus`, `identity`) được train đồng thời trên dữ liệu `make_classification`; slider `Difficulty` điều chỉnh class separation, label noise và độ phức tạp cluster. Tổng mẫu mặc định là `300` (`3 class × 100`) nhưng có thể chỉnh trên UI; dữ liệu được chia mặc định thành train `60%`, validation `15%`, test `15%` và holdout cuối `10%`. Holdout chỉ được dùng một lần sau khi train xong để báo final accuracy, không tham gia cập nhật weight hay early stopping. UI cũng cho chỉnh tỷ lệ các tập và `batch size`. Delay chỉ làm chậm event để dễ quan sát, không làm model học tốt hơn. Có thể bật `Early stopping` để dừng từng activation khi validation loss không cải thiện trong 40 epoch.
 
 Terminal 1 — backend:
 
@@ -70,7 +70,7 @@ npm install
 npm run dev
 ```
 
-Mở `http://localhost:5113`. Chọn delay `0.01s`, `0.05s` hoặc `0.1s` để nhìn rõ từng epoch, loss và validation accuracy của mỗi activation.
+Mở `http://localhost:5113`. Kéo `Difficulty` để tạo bài toán dễ hoặc khó hơn; chọn delay `0.01s`, `0.05s` hoặc `0.1s` để nhìn rõ từng epoch, loss và validation accuracy của mỗi activation.
 
 Hoặc chạy cả backend và frontend bằng một lệnh:
 

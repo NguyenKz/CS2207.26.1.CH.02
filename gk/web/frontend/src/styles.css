@@ -53,14 +53,9 @@ h1 { max-width: 720px; margin-top: 12px; font-size: clamp(38px, 6vw, 74px); line
 h2 { margin-top: 7px; font-size: 22px; line-height: 1.1; letter-spacing: -.04em; }
 h3 { font-size: 15px; letter-spacing: -.02em; }
 .intro-copy { max-width: 560px; margin-top: 20px; color: #56605f; font-size: 16px; line-height: 1.55; }
-.intro-meta { align-self: end; min-width: 220px; padding-left: 20px; border-left: 1px solid var(--line); }
-.intro-meta span, .intro-meta strong { display: block; }
-.intro-meta strong { margin: 8px 0 6px; font: 500 28px var(--mono); letter-spacing: -.08em; }
-.intro-meta span:last-child { color: var(--muted); font: 10px var(--mono); }
-.meta-label { color: var(--teal); font: 500 10px var(--mono); letter-spacing: .1em; }
 
 .control-panel, .pipeline-panel, .panel-surface { background: var(--paper); border: 1px solid var(--line); }
-.control-panel { display: flex; align-items: end; gap: 14px; padding: 18px; position: relative; }
+.control-panel { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; padding: 18px; position: relative; }
 .control-heading { min-width: 170px; margin-right: auto; }
 .control-heading strong { display: block; margin-top: 8px; font-size: 14px; }
 .toggle-field { display: grid; grid-template-columns: auto 1fr; gap: 1px 6px; align-items: center; width: 180px; margin-top: 6px; color: var(--ink); font-size: 9px; }
@@ -70,6 +65,18 @@ h3 { font-size: 15px; letter-spacing: -.02em; }
 label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
 input, select { width: 112px; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 9px 10px; font: 12px var(--mono); }
 input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep); }
+.difficulty-field { min-width: 148px; }
+.difficulty-field output { float: right; color: var(--ink); font: 500 11px var(--mono); }
+.difficulty-range { display: block; width: 148px; height: 18px; margin: 0; padding: 0; accent-color: var(--teal); }
+.difficulty-endpoints { display: flex; justify-content: space-between; color: var(--muted); font: 8px var(--mono); }
+.difficulty-field small { color: var(--muted); font: 8px var(--mono); white-space: nowrap; }
+.dataset-settings { display: grid; grid-template-columns: 56px repeat(4, 34px); gap: 3px; align-items: end; min-width: 210px; }
+.dataset-settings label { gap: 3px; font-size: 8px; }
+.dataset-settings input { width: 100%; padding: 7px 4px; font-size: 10px; }
+.dataset-settings small { grid-column: 1 / -1; font: 8px var(--mono); }
+.dataset-count-note { color: var(--muted); }
+.split-valid { color: var(--teal); }
+.split-invalid { color: #a33e31; }
 .control-actions { display: flex; gap: 8px; align-items: center; }
 .button { border: 1px solid var(--line); padding: 10px 14px; cursor: pointer; font-size: 12px; font-weight: 600; }
 .button-primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
@@ -171,10 +178,12 @@ input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep);
   .connection-pill { position: absolute; top: 19px; right: 14px; }
   .intro-row { padding: 38px 0 26px; }
   h1 { font-size: 50px; }
-  .intro-meta { width: 100%; padding: 15px 0 0; border-left: 0; border-top: 1px solid var(--line); }
   .control-panel { align-items: stretch; }
   .control-heading { margin-right: 0; }
   label, input, select { width: 100%; }
+  .difficulty-field, .difficulty-range { width: 100%; }
+  .difficulty-field small { white-space: normal; }
+  .dataset-settings { width: 100%; grid-template-columns: 1fr repeat(4, 1fr); }
   .control-actions { flex-wrap: wrap; }
   .button { flex: 1; }
   .pipeline-panel { padding: 16px; }
@@ -196,15 +205,25 @@ input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep);
   .brand-mark { width: 30px; height: 30px; }
   .brand-lockup strong { font-size: 12px; }
   .brand-lockup span { margin-top: 1px; font-size: 9px; }
-  .lesson-body { gap: 18px; padding: 8px 12px 9px; }
+  .lesson-body { grid-template-columns: minmax(250px, .4fr) minmax(0, 1.6fr); gap: 18px; padding: 8px 12px 9px; }
   .lesson-intro { align-items: center; gap: 14px; }
   .lesson-copy h1 { margin-top: 4px; font-size: 28px; letter-spacing: -.055em; }
   .lesson-copy .intro-copy { display: none; }
-  .lesson-body .intro-meta { min-width: 165px; padding-left: 14px; }
-  .lesson-body .intro-meta strong { margin: 2px 0; font-size: 18px; }
-  .lesson-body .intro-meta span:last-child { font-size: 8px; }
-  .lesson-body .control-panel { min-height: 46px; gap: 10px; }
-  .lesson-body .control-heading { min-width: 132px; margin-right: 0; }
+  .lesson-body .control-panel { display: grid; grid-template-columns: 120px 145px 225px 78px 78px 95px 90px minmax(215px, 1fr); min-height: 46px; gap: 7px; padding: 0; align-items: start; }
+  .lesson-body .control-heading { grid-column: 1; min-width: 0; margin-right: 0; }
+  .lesson-body .difficulty-field { grid-column: 2; min-width: 0; }
+  .lesson-body .dataset-settings { grid-column: 3; min-width: 0; }
+  .lesson-body .batch-field { grid-column: 4; }
+  .lesson-body .epochs-field { grid-column: 5; }
+  .lesson-body .delay-field { grid-column: 6; }
+  .lesson-body .learning-field { grid-column: 7; }
+  .lesson-body .control-actions { grid-column: 8; align-self: start; margin-top: 18px; }
+  .lesson-body .toggle-field { width: 100%; }
+  .lesson-body .difficulty-range { width: 100%; }
+  .lesson-body .dataset-settings { grid-template-columns: 56px repeat(4, minmax(30px, 1fr)); }
+  .lesson-body .batch-field input, .lesson-body .epochs-field input, .lesson-body .delay-field select, .lesson-body .learning-field input { width: 100%; }
+  .lesson-body .control-actions { gap: 6px; }
+  .lesson-body .button { padding: 6px 8px; font-size: 9px; }
   .lesson-body .control-heading strong { margin-top: 4px; font-size: 12px; }
   label { gap: 3px; font-size: 9px; }
   input, select, .button { padding: 7px 9px; font-size: 10px; }
