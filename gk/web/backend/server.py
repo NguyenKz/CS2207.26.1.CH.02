@@ -24,8 +24,8 @@ app.add_middleware(
 
 
 class TrainConfig(BaseModel):
-    epochs: int = Field(default=2000, ge=1, le=5000)
-    delay_seconds: float = Field(default=0.1, ge=0.0, le=2.0)
+    epochs: int = Field(default=2000, ge=1, le=500000)
+    delay_seconds: float = Field(default=0.001, ge=0.0, le=2.0)
     learning_rate: float = Field(default=0.05, gt=0.0, le=1.0)
     hidden_neuron_count: int = Field(default=8, ge=1, le=32)
     random_seed: int = 42

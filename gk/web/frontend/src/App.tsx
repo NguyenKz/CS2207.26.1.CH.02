@@ -72,7 +72,7 @@ type SocketMessage = {
 
 const DEFAULT_CONFIG: RunConfig = {
   epochs: 2000,
-  delay_seconds: 0.1,
+  delay_seconds: 0.001,
   learning_rate: 0.05,
   hidden_neuron_count: 8,
   random_seed: 42,
@@ -154,30 +154,32 @@ function Sparkline({
   color: string;
   label: string;
 }): ReactElement {
-  const values = points.map((point) => point.trainingLoss);
+  const values = points.flatMap((point) => [point.trainingLoss, point.validationLoss]);
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 1;
   const range = Math.max(max - min, 0.001);
   const width = 280;
   const height = 48;
-  const polyline = values
-    .map((value, index) => {
-      const x = values.length === 1 ? width : (index / (values.length - 1)) * width;
+  const toPoint = (value: number, index: number): string => {
+      const x = points.length === 1 ? width : (index / (points.length - 1)) * width;
       const y = height - ((value - min) / range) * (height - 6) - 3;
       return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+    };
+  const trainingPolyline = points.map((point, index) => toPoint(point.trainingLoss, index)).join(" ");
+  const validationPolyline = points.map((point, index) => toPoint(point.validationLoss, index)).join(" ");
 
   return (
     <div className="sparkline-frame">
-      <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label}>
+      <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label}: train loss solid, validation loss dashed`}>
         <line x1="0" y1="0" x2="0" y2={height - 1} className="sparkline-axis" vectorEffect="non-scaling-stroke" />
         <line x1="0" y1={height - 1} x2={width} y2={height - 1} className="sparkline-baseline" vectorEffect="non-scaling-stroke" />
-        {polyline && <polyline points={polyline} fill="none" stroke={color} strokeWidth="2.5" vectorEffect="non-scaling-stroke" />}
+        {trainingPolyline && <polyline points={trainingPolyline} fill="none" stroke={color} strokeWidth="2.2" vectorEffect="non-scaling-stroke" />}
+        {validationPolyline && <polyline points={validationPolyline} fill="none" stroke={color} strokeWidth="1.6" strokeDasharray="4 3" opacity="0.58" vectorEffect="non-scaling-stroke" />}
       </svg>
       <span className="sparkline-max-label">{max.toFixed(2)}</span>
       <span className="sparkline-y-label">loss</span>
       <span className="sparkline-x-label">epoch</span>
+      <span className="sparkline-key"><span className="sparkline-key-train" /> train <span className="sparkline-key-validation" /> val</span>
     </div>
   );
 }
