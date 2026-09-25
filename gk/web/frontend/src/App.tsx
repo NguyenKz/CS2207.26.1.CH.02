@@ -19,6 +19,9 @@ type RunConfig = {
   learning_rate: number;
   hidden_neuron_count: number;
   random_seed: number;
+  early_stopping: boolean;
+  early_stopping_patience: number;
+  early_stopping_min_delta: number;
   activations: ActivationName[];
 };
 
@@ -28,7 +31,7 @@ type Metric = {
   trainingLoss: number | null;
   validationLoss: number | null;
   validationAccuracy: number | null;
-  status: "idle" | "running" | "completed" | "cancelled";
+  status: "idle" | "running" | "completed" | "cancelled" | "early_stopped";
 };
 
 type LossPoint = {
@@ -44,6 +47,7 @@ type SummaryResult = {
   training_loss: number | null;
   validation_loss: number | null;
   validation_accuracy: number | null;
+  stopped_early?: boolean;
 };
 
 type SocketMessage = {
@@ -72,6 +76,9 @@ const DEFAULT_CONFIG: RunConfig = {
   learning_rate: 0.05,
   hidden_neuron_count: 8,
   random_seed: 42,
+  early_stopping: false,
+  early_stopping_patience: 40,
+  early_stopping_min_delta: 0.001,
   activations: [...ACTIVATIONS],
 };
 
@@ -128,6 +135,7 @@ function StatusMark({ status }: { status: Metric["status"] }): ReactElement {
     running: "Đang chạy",
     completed: "Hoàn tất",
     cancelled: "Đã dừng",
+    early_stopped: "Dừng sớm",
   };
   return (
     <span className={`status status-${status}`}>
@@ -337,7 +345,7 @@ function App(): ReactElement {
           trainingLoss: message.training_loss ?? current[activation].trainingLoss,
           validationLoss: message.validation_loss ?? current[activation].validationLoss,
           validationAccuracy: message.validation_accuracy ?? current[activation].validationAccuracy,
-          status: "running",
+          status: message.status === "early_stopped" ? "early_stopped" : "running",
         },
       }));
       if (message.training_loss !== undefined && message.validation_loss !== undefined) {
@@ -352,8 +360,17 @@ function App(): ReactElement {
       const finalStatus = message.type === "run_completed" ? "completed" : "cancelled";
       setRunState(finalStatus);
       setSummary({ durationMs: message.duration_ms ?? 0, results: message.results ?? [] });
+      const resultByActivation = new Map((message.results ?? []).map((result) => [result.activation, result]));
       setMetrics((current) => Object.fromEntries(
-        ACTIVATIONS.map((activation) => [activation, { ...current[activation], status: finalStatus }]),
+        ACTIVATIONS.map((activation) => [
+          activation,
+          {
+            ...current[activation],
+            status: finalStatus === "completed" && resultByActivation.get(activation)?.stopped_early
+              ? "early_stopped"
+              : finalStatus,
+          },
+        ]),
       ) as Record<ActivationName, Metric>);
       return;
     }
@@ -455,7 +472,7 @@ function App(): ReactElement {
           </div>
 
           <section className="control-panel" aria-label="Training controls">
-            <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong></div>
+            <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Dừng nếu validation loss không giảm ≥ {runConfig.early_stopping_min_delta} trong {runConfig.early_stopping_patience} epoch liên tiếp.</small></label></div>
             <label>Epochs<input type="number" min="1" max="5000" value={runConfig.epochs} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, epochs: Number(event.target.value) })} /></label>
             <label>Delay per epoch<select value={runConfig.delay_seconds} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.001">0.001s</option><option value="0.01">0.01s</option><option value="0.05">0.05s</option><option value="0.1">0.1s</option></select></label>
             <label>Learning rate<input type="number" min="0.001" max="1" step="0.01" value={runConfig.learning_rate} disabled={runState === "running" || runState === "connecting"} onChange={(event) => setRunConfig({ ...runConfig, learning_rate: Number(event.target.value) })} /></label>

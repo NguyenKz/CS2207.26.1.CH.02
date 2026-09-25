@@ -53,7 +53,7 @@ Kernel cần chọn trong Jupyter là `Python (CS2207 ANN)`.
 
 ## Chạy web demo realtime
 
-Web demo có tab `Train`, dùng React + TypeScript ở frontend và FastAPI + NumPy ở backend. Sáu activation (`tanh`, `sigmoid`, `ReLU`, `Leaky ReLU`, `softplus`, `identity`) được train đồng thời; delay chỉ làm chậm event để dễ quan sát, không làm model học tốt hơn.
+Web demo có tab `Train`, dùng React + TypeScript ở frontend và FastAPI + NumPy ở backend. Sáu activation (`tanh`, `sigmoid`, `ReLU`, `Leaky ReLU`, `softplus`, `identity`) được train đồng thời; delay chỉ làm chậm event để dễ quan sát, không làm model học tốt hơn. Có thể bật `Early stopping` để dừng từng activation khi validation loss không cải thiện trong 40 epoch.
 
 Terminal 1 — backend:
 

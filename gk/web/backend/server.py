@@ -29,6 +29,9 @@ class TrainConfig(BaseModel):
     learning_rate: float = Field(default=0.05, gt=0.0, le=1.0)
     hidden_neuron_count: int = Field(default=8, ge=1, le=32)
     random_seed: int = 42
+    early_stopping: bool = False
+    early_stopping_patience: int = Field(default=40, ge=1, le=500)
+    early_stopping_min_delta: float = Field(default=0.001, ge=0.0, le=1.0)
     activations: list[str] = Field(default_factory=lambda: list(SUPPORTED_ACTIVATIONS))
 
     @field_validator("activations")
@@ -68,6 +71,9 @@ async def train_activation(
         "validation_loss": None,
         "validation_accuracy": None,
     }
+    best_validation_loss = float("inf")
+    epochs_without_improvement = 0
+    stopped_early = False
 
     for epoch_number in range(1, config.epochs + 1):
         if cancel_event.is_set():
@@ -87,6 +93,16 @@ async def train_activation(
             "validation_loss": validation_loss,
             "validation_accuracy": validation_accuracy,
         }
+        if validation_loss < best_validation_loss - config.early_stopping_min_delta:
+            best_validation_loss = validation_loss
+            epochs_without_improvement = 0
+        elif config.early_stopping:
+            epochs_without_improvement += 1
+
+        should_stop_early = (
+            config.early_stopping
+            and epochs_without_improvement >= config.early_stopping_patience
+        )
         await event_queue.put(
             {
                 "type": "epoch_update",
@@ -94,9 +110,12 @@ async def train_activation(
                 "epoch": epoch_number,
                 "total_epochs": config.epochs,
                 **last_metrics,
-                "status": "running",
+                "status": "early_stopped" if should_stop_early else "running",
             }
         )
+        if should_stop_early:
+            stopped_early = True
+            break
         await asyncio.sleep(config.delay_seconds)
 
     test_accuracy = float(
@@ -106,6 +125,7 @@ async def train_activation(
         "activation": activation_name,
         "epochs_completed": completed_epochs,
         "test_accuracy": test_accuracy,
+        "stopped_early": stopped_early,
         **last_metrics,
     }
 
@@ -127,6 +147,9 @@ async def stream_training(
             "activations": config.activations,
             "total_epochs": config.epochs,
             "delay_seconds": config.delay_seconds,
+            "early_stopping": config.early_stopping,
+            "early_stopping_patience": config.early_stopping_patience,
+            "early_stopping_min_delta": config.early_stopping_min_delta,
             "dataset": {
                 "training": list(data.training_features.shape),
                 "validation": list(data.validation_features.shape),

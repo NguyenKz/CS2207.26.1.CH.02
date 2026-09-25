@@ -63,6 +63,10 @@ h3 { font-size: 15px; letter-spacing: -.02em; }
 .control-panel { display: flex; align-items: end; gap: 14px; padding: 18px; position: relative; }
 .control-heading { min-width: 170px; margin-right: auto; }
 .control-heading strong { display: block; margin-top: 8px; font-size: 14px; }
+.toggle-field { display: grid; grid-template-columns: auto 1fr; gap: 1px 6px; align-items: center; width: 180px; margin-top: 6px; color: var(--ink); font-size: 9px; }
+.toggle-field input { grid-row: span 2; width: 14px; height: 14px; margin: 0; padding: 0; accent-color: var(--teal); }
+.toggle-field span { font-weight: 600; }
+.toggle-field small { color: var(--muted); font: 7px var(--mono); line-height: 1.25; }
 label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; }
 input, select { width: 112px; border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 9px 10px; font: 12px var(--mono); }
 input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep); }
@@ -103,6 +107,7 @@ input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep);
 .status-running { color: var(--teal); }
 .status-completed { color: #377d5f; }
 .status-cancelled { color: #b7862c; }
+.status-early_stopped { color: #b7862c; }
 .progress-track { height: 3px; margin: 17px 0 10px; background: var(--paper-deep); }
 .progress-track span { display: block; height: 100%; transition: width .2s ease; }
 .card-epoch { gap: 6px; font: 10px var(--mono); color: var(--muted); }
@@ -196,7 +201,7 @@ input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep);
   .lesson-body .intro-meta strong { margin: 2px 0; font-size: 18px; }
   .lesson-body .intro-meta span:last-child { font-size: 8px; }
   .lesson-body .control-panel { min-height: 46px; gap: 10px; }
-  .lesson-body .control-heading { min-width: 108px; margin-right: 0; }
+  .lesson-body .control-heading { min-width: 132px; margin-right: 0; }
   .lesson-body .control-heading strong { margin-top: 4px; font-size: 12px; }
   label { gap: 3px; font-size: 9px; }
   input, select, .button { padding: 7px 9px; font-size: 10px; }
