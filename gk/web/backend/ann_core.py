@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from sklearn.datasets import make_classification
@@ -206,7 +206,7 @@ def prepare_classification_data(
 
 
 class SimpleANN:
-    """A two-layer classifier with explicit forward and gradient steps."""
+    """A configurable MLP classifier with explicit forward and gradient steps."""
 
     def __init__(
         self,
@@ -216,44 +216,73 @@ class SimpleANN:
         learning_rate: float = 0.05,
         random_seed: int = 42,
         hidden_activation_name: ActivationName = "tanh",
+        hidden_layers: list[tuple[int, ActivationName]] | None = None,
     ) -> None:
-        if hidden_activation_name not in SUPPORTED_ACTIVATIONS:
-            raise ValueError(f"Unsupported activation: {hidden_activation_name}")
-
         self.random_generator = np.random.default_rng(random_seed)
-        self.input_to_hidden_weights = self.random_generator.normal(
-            0, 0.5, size=(input_feature_count, hidden_neuron_count)
-        )
-        self.hidden_layer_biases = np.zeros((1, hidden_neuron_count))
-        self.hidden_to_output_weights = self.random_generator.normal(
-            0, 0.5, size=(hidden_neuron_count, output_class_count)
+        configured_layers = hidden_layers or [(hidden_neuron_count, hidden_activation_name)]
+        if not configured_layers:
+            raise ValueError("At least one hidden layer is required")
+        for neuron_count, activation_name in configured_layers:
+            if neuron_count < 1:
+                raise ValueError("hidden layer size must be positive")
+            if activation_name not in SUPPORTED_ACTIVATIONS:
+                raise ValueError(f"Unsupported activation: {activation_name}")
+
+        self.hidden_layer_sizes = [neuron_count for neuron_count, _ in configured_layers]
+        self.hidden_activation_names = [activation_name for _, activation_name in configured_layers]
+        self.hidden_layer_weights: list[np.ndarray] = []
+        self.hidden_layer_biases_list: list[np.ndarray] = []
+        previous_size = input_feature_count
+        for neuron_count, _ in configured_layers:
+            self.hidden_layer_weights.append(
+                self.random_generator.normal(0, 0.5, size=(previous_size, neuron_count))
+            )
+            self.hidden_layer_biases_list.append(np.zeros((1, neuron_count)))
+            previous_size = neuron_count
+
+        self.output_layer_weights = self.random_generator.normal(
+            0, 0.5, size=(previous_size, output_class_count)
         )
         self.output_layer_biases = np.zeros((1, output_class_count))
         self.learning_rate = learning_rate
-        self.hidden_activation_name = hidden_activation_name
+        self.hidden_activation_name = self.hidden_activation_names[0]
+
+        # Keep the original attribute names available to the existing Train tab
+        # and educational notebook while the studio uses the layer lists above.
+        self.input_to_hidden_weights = self.hidden_layer_weights[0]
+        self.hidden_layer_biases = self.hidden_layer_biases_list[0]
+        self.hidden_to_output_weights = self.output_layer_weights
         self.loss_history: list[float] = []
         self.validation_loss_history: list[float] = []
         self.validation_accuracy_history: list[float] = []
 
-    def forward(self, input_features: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-        hidden_layer_pre_activation = (
-            input_features @ self.input_to_hidden_weights
-            + self.hidden_layer_biases
-        )
-        hidden_layer_output = apply_activation(
-            hidden_layer_pre_activation,
-            self.hidden_activation_name,
-        )
+    def forward(self, input_features: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+        hidden_layer_pre_activations: list[np.ndarray] = []
+        hidden_layer_outputs: list[np.ndarray] = []
+        current_output = input_features
+        for weights, biases, activation_name in zip(
+            self.hidden_layer_weights,
+            self.hidden_layer_biases_list,
+            self.hidden_activation_names,
+        ):
+            hidden_layer_pre_activation = current_output @ weights + biases
+            current_output = apply_activation(hidden_layer_pre_activation, activation_name)
+            hidden_layer_pre_activations.append(hidden_layer_pre_activation)
+            hidden_layer_outputs.append(current_output)
+
         output_layer_pre_activation = (
-            hidden_layer_output @ self.hidden_to_output_weights
+            current_output @ self.output_layer_weights
             + self.output_layer_biases
         )
         output_probabilities = softmax(output_layer_pre_activation)
         forward_cache = {
-            "hidden_layer_pre_activation": hidden_layer_pre_activation,
-            "hidden_layer_output": hidden_layer_output,
+            "hidden_layer_pre_activations": hidden_layer_pre_activations,
+            "hidden_layer_outputs": hidden_layer_outputs,
             "output_layer_pre_activation": output_layer_pre_activation,
         }
+        if len(hidden_layer_outputs) == 1:
+            forward_cache["hidden_layer_pre_activation"] = hidden_layer_pre_activations[0]
+            forward_cache["hidden_layer_output"] = hidden_layer_outputs[0]
         return output_probabilities, forward_cache
 
     @staticmethod
@@ -300,39 +329,54 @@ class SimpleANN:
         output_layer_pre_activation_gradients = (
             output_probabilities - one_hot_targets
         ) / training_sample_count
-        hidden_to_output_weight_gradients = (
-            forward_cache["hidden_layer_output"].T
-            @ output_layer_pre_activation_gradients
-        )
+        hidden_layer_outputs = forward_cache["hidden_layer_outputs"]
+        hidden_layer_pre_activations = forward_cache["hidden_layer_pre_activations"]
+        output_layer_input = hidden_layer_outputs[-1]
+        output_layer_weight_gradients = output_layer_input.T @ output_layer_pre_activation_gradients
         output_layer_bias_gradients = output_layer_pre_activation_gradients.sum(
             axis=0, keepdims=True
         )
         hidden_layer_output_gradients = (
             output_layer_pre_activation_gradients
-            @ self.hidden_to_output_weights.T
-        )
-        hidden_layer_pre_activation_gradients = (
-            hidden_layer_output_gradients
-            * activation_derivative(
-                forward_cache["hidden_layer_pre_activation"],
-                self.hidden_activation_name,
-            )
-        )
-        input_to_hidden_weight_gradients = (
-            input_features.T @ hidden_layer_pre_activation_gradients
-        )
-        hidden_layer_bias_gradients = hidden_layer_pre_activation_gradients.sum(
-            axis=0, keepdims=True
+            @ self.output_layer_weights.T
         )
 
-        self.hidden_to_output_weights -= (
-            self.learning_rate * hidden_to_output_weight_gradients
-        )
+        hidden_weight_gradients: list[np.ndarray] = [
+            np.zeros_like(weights) for weights in self.hidden_layer_weights
+        ]
+        hidden_bias_gradients: list[np.ndarray] = [
+            np.zeros_like(biases) for biases in self.hidden_layer_biases_list
+        ]
+        for layer_index in range(len(self.hidden_layer_weights) - 1, -1, -1):
+            hidden_layer_pre_activation_gradients = hidden_layer_output_gradients * activation_derivative(
+                hidden_layer_pre_activations[layer_index],
+                self.hidden_activation_names[layer_index],
+            )
+            previous_output = (
+                input_features
+                if layer_index == 0
+                else hidden_layer_outputs[layer_index - 1]
+            )
+            hidden_weight_gradients[layer_index] = (
+                previous_output.T @ hidden_layer_pre_activation_gradients
+            )
+            hidden_bias_gradients[layer_index] = hidden_layer_pre_activation_gradients.sum(
+                axis=0, keepdims=True
+            )
+            hidden_layer_output_gradients = (
+                hidden_layer_pre_activation_gradients
+                @ self.hidden_layer_weights[layer_index].T
+            )
+
+        self.output_layer_weights -= self.learning_rate * output_layer_weight_gradients
         self.output_layer_biases -= self.learning_rate * output_layer_bias_gradients
-        self.input_to_hidden_weights -= (
-            self.learning_rate * input_to_hidden_weight_gradients
-        )
-        self.hidden_layer_biases -= self.learning_rate * hidden_layer_bias_gradients
+        for layer_index in range(len(self.hidden_layer_weights)):
+            self.hidden_layer_weights[layer_index] -= (
+                self.learning_rate * hidden_weight_gradients[layer_index]
+            )
+            self.hidden_layer_biases_list[layer_index] -= (
+                self.learning_rate * hidden_bias_gradients[layer_index]
+            )
 
     def evaluate(
         self,
@@ -355,3 +399,19 @@ class SimpleANN:
 
     def predict(self, input_features: np.ndarray) -> np.ndarray:
         return self.predict_proba(input_features).argmax(axis=1)
+
+    def trace(self, input_features: np.ndarray) -> dict[str, np.ndarray]:
+        """Forward pass with intermediates for the Inspect UI."""
+        features = np.asarray(input_features, dtype=float)
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+        output_probabilities, forward_cache = self.forward(features)
+        return {
+            "input": features,
+            "hidden_pre_activation": forward_cache["hidden_layer_pre_activations"][0],
+            "hidden_output": forward_cache["hidden_layer_outputs"][0],
+            "hidden_pre_activations": forward_cache["hidden_layer_pre_activations"],
+            "hidden_outputs": forward_cache["hidden_layer_outputs"],
+            "output_pre_activation": forward_cache["output_layer_pre_activation"],
+            "output_probabilities": output_probabilities,
+        }

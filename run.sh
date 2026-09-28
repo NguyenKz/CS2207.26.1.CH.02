@@ -52,7 +52,7 @@ echo "Backend:  http://localhost:6788"
 echo "Frontend: http://localhost:5113"
 echo "Press Ctrl+C to stop both servers."
 
-uvicorn gk.web.backend.server:app --port 6788 &
+uvicorn gk.web.backend.server:app --reload --port 6788 &
 BACKEND_PID=$!
 
 npm --prefix "$FRONTEND_DIR" run dev -- --host 0.0.0.0 --port 5113 &

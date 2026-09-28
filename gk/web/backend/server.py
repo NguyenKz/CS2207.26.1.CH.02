@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import numpy as np
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -262,6 +264,222 @@ async def stream_training(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@dataclass
+class InspectSession:
+    model: SimpleANN
+    feature_means: np.ndarray
+    feature_stds: np.ndarray
+    holdout_features_raw: np.ndarray
+    holdout_labels: np.ndarray
+    activation: str
+    hidden_neuron_count: int
+    hidden_layers: list[tuple[int, str]]
+    epochs_trained: int
+    final_training_loss: float
+    validation_accuracy: float
+
+
+INSPECT_SESSIONS: dict[str, InspectSession] = {}
+
+
+class InspectLayerConfig(BaseModel):
+    neurons: int = Field(default=8, ge=1, le=32)
+    activation: str = "tanh"
+
+    @field_validator("activation")
+    @classmethod
+    def validate_activation(cls, value: str) -> str:
+        if value not in SUPPORTED_ACTIVATIONS:
+            raise ValueError(f"Unsupported activation: {value}")
+        return value
+
+
+class InspectBuildConfig(BaseModel):
+    activation: str = "tanh"
+    hidden_neuron_count: int = Field(default=8, ge=1, le=32)
+    hidden_layers: list[InspectLayerConfig] | None = Field(default=None, max_length=4)
+    epochs: int = Field(default=200, ge=1, le=5000)
+    learning_rate: float = Field(default=0.05, gt=0.0, le=1.0)
+    difficulty: float = Field(default=0.5, ge=0.0, le=1.0)
+    sample_count: int = Field(default=300, ge=30, le=10000)
+    batch_size: int = Field(default=32, ge=1, le=10000)
+    random_seed: int = 42
+
+    @field_validator("activation")
+    @classmethod
+    def validate_activation(cls, value: str) -> str:
+        if value not in SUPPORTED_ACTIVATIONS:
+            raise ValueError(f"Unsupported activation: {value}")
+        return value
+
+
+class InspectForwardRequest(BaseModel):
+    model_id: str
+    features: list[float] = Field(min_length=4, max_length=4)
+
+
+def _get_inspect_session(model_id: str) -> InspectSession:
+    session = INSPECT_SESSIONS.get(model_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Inspect model not found. Build one first.")
+    return session
+
+
+def _serialize_forward(session: InspectSession, features_raw: np.ndarray) -> dict[str, Any]:
+    features_raw = np.asarray(features_raw, dtype=float).reshape(1, 4)
+    features_normalized = (features_raw - session.feature_means) / session.feature_stds
+    trace = session.model.trace(features_normalized)
+    hidden_pre_activations = trace["hidden_pre_activations"]
+    hidden_outputs = trace["hidden_outputs"]
+    logits = trace["output_pre_activation"][0]
+    probabilities = trace["output_probabilities"][0]
+
+    serialized_layers = []
+    for layer_index, ((neuron_count, activation), layer_z, layer_h, weights, biases) in enumerate(
+        zip(
+            session.hidden_layers,
+            hidden_pre_activations,
+            hidden_outputs,
+            session.model.hidden_layer_weights,
+            session.model.hidden_layer_biases_list,
+        )
+    ):
+        neurons = [
+            {
+                "index": neuron_index,
+                "z": float(layer_z[0, neuron_index]),
+                "h": float(layer_h[0, neuron_index]),
+                "weights": [float(value) for value in weights[:, neuron_index]],
+                "bias": float(biases[0, neuron_index]),
+            }
+            for neuron_index in range(neuron_count)
+        ]
+        serialized_layers.append(
+            {
+                "index": layer_index,
+                "activation": activation,
+                "neuron_count": neuron_count,
+                "neurons": neurons,
+            }
+        )
+
+    output_weights = session.model.output_layer_weights
+    output_biases = session.model.output_layer_biases[0]
+    output_neurons = [
+        {
+            "index": index,
+            "logit": float(logits[index]),
+            "probability": float(probabilities[index]),
+            "weights": [float(value) for value in output_weights[:, index]],
+            "bias": float(output_biases[index]),
+        }
+        for index in range(CLASS_COUNT)
+    ]
+    return {
+        "features_raw": [float(value) for value in features_raw[0]],
+        "features_normalized": [float(value) for value in features_normalized[0]],
+        "activation": session.activation,
+        "hidden_neuron_count": session.hidden_neuron_count,
+        "hidden_layers": [
+            {"neurons": neuron_count, "activation": activation}
+            for neuron_count, activation in session.hidden_layers
+        ],
+        "layers": serialized_layers,
+        "hidden": serialized_layers[0]["neurons"],
+        "output": output_neurons,
+        "predicted_class": int(probabilities.argmax()),
+    }
+
+
+@app.post("/inspect/build")
+async def inspect_build(config: InspectBuildConfig) -> dict[str, Any]:
+    data = prepare_classification_data(
+        random_seed=config.random_seed,
+        difficulty=config.difficulty,
+        sample_count=config.sample_count,
+    )
+    feature_means = data.training_features_raw.mean(axis=0)
+    feature_stds = data.training_features_raw.std(axis=0)
+    holdout_features_raw = (
+        data.holdout_features * feature_stds + feature_means
+    )
+
+    configured_layers = config.hidden_layers or [
+        InspectLayerConfig(neurons=config.hidden_neuron_count, activation=config.activation)
+    ]
+    hidden_layers = [(layer.neurons, layer.activation) for layer in configured_layers]
+    first_activation = hidden_layers[0][1]
+    model = SimpleANN(
+        input_feature_count=4,
+        output_class_count=CLASS_COUNT,
+        learning_rate=config.learning_rate,
+        random_seed=config.random_seed,
+        hidden_layers=hidden_layers,  # type: ignore[arg-type]
+    )
+    for _ in range(config.epochs):
+        model.train_epoch(
+            data.training_features,
+            data.training_one_hot_labels,
+            batch_size=config.batch_size,
+        )
+    validation_loss, validation_accuracy = model.evaluate(
+        data.validation_features,
+        data.validation_one_hot_labels,
+    )
+
+    model_id = str(uuid.uuid4())
+    INSPECT_SESSIONS[model_id] = InspectSession(
+        model=model,
+        feature_means=feature_means,
+        feature_stds=feature_stds,
+        holdout_features_raw=holdout_features_raw,
+        holdout_labels=data.holdout_labels,
+        activation=first_activation,
+        hidden_neuron_count=hidden_layers[0][0],
+        hidden_layers=hidden_layers,
+        epochs_trained=config.epochs,
+        final_training_loss=float(model.loss_history[-1]),
+        validation_accuracy=validation_accuracy,
+    )
+    return {
+        "model_id": model_id,
+        "activation": first_activation,
+        "hidden_neuron_count": hidden_layers[0][0],
+        "hidden_layers": [
+            {"neurons": neuron_count, "activation": activation}
+            for neuron_count, activation in hidden_layers
+        ],
+        "epochs_trained": config.epochs,
+        "final_training_loss": float(model.loss_history[-1]),
+        "validation_loss": validation_loss,
+        "validation_accuracy": validation_accuracy,
+        "weight_shapes": {
+            "hidden": [list(weights.shape) for weights in model.hidden_layer_weights],
+            "hidden_to_output": list(model.output_layer_weights.shape),
+        },
+    }
+
+
+@app.post("/inspect/forward")
+async def inspect_forward(request: InspectForwardRequest) -> dict[str, Any]:
+    session = _get_inspect_session(request.model_id)
+    return _serialize_forward(session, np.asarray(request.features, dtype=float))
+
+
+@app.get("/inspect/sample")
+async def inspect_sample(model_id: str) -> dict[str, Any]:
+    session = _get_inspect_session(model_id)
+    sample_index = int(
+        session.model.random_generator.integers(0, len(session.holdout_labels))
+    )
+    features = session.holdout_features_raw[sample_index]
+    return {
+        "features": [float(value) for value in features],
+        "label": int(session.holdout_labels[sample_index]),
+        "sample_index": sample_index,
+    }
 
 
 @app.websocket("/ws/train")
