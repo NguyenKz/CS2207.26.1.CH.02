@@ -329,6 +329,23 @@ input:disabled, select:disabled { color: #9b9d98; background: var(--paper-deep);
   padding: 28px 22px 24px;
 }
 
+@media (min-width: 761px) {
+  .inspect-hero .lesson-copy {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 18px;
+  }
+
+  .inspect-hero .lesson-copy h1 {
+    margin-top: 0;
+  }
+
+  .inspect-hero .lesson-copy .intro-copy {
+    display: none;
+  }
+}
+
 .inspect-layout {
   display: grid;
   grid-template-columns: minmax(250px, .34fr) minmax(0, .66fr);
