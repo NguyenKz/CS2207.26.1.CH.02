@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sklearn.datasets import load_digits
 
 
 ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "digits_models.json"
@@ -70,7 +69,7 @@ def load_digits_artifact() -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as error:
         raise DigitsArtifactError(f"Could not read digits artifact: {error}") from error
 
-    if artifact.get("version") != 1:
+    if artifact.get("version") not in (1, 2, 3):
         raise DigitsArtifactError("Unsupported digits artifact version.")
     if len(artifact.get("models", [])) != 4:
         raise DigitsArtifactError("Digits artifact must contain exactly four models.")
@@ -81,6 +80,13 @@ def load_digits_artifact() -> dict[str, Any]:
     )
     if np.any(standard_deviation <= 0):
         raise DigitsArtifactError("Preprocessing standard deviations must be positive.")
+    if artifact.get("version") >= 3:
+        samples = np.asarray(artifact.get("test_samples"), dtype=float)
+        labels = np.asarray(artifact.get("test_labels"), dtype=int)
+        if samples.ndim != 2 or samples.shape[1] != PIXEL_COUNT:
+            raise DigitsArtifactError("MNIST test samples must have shape (n, 64).")
+        if labels.shape != (samples.shape[0],):
+            raise DigitsArtifactError("MNIST test labels do not match test samples.")
 
     for model in artifact["models"]:
         if not model.get("id") or not model.get("layers"):
@@ -103,12 +109,6 @@ def load_digits_artifact() -> dict[str, Any]:
                 f"Model {model['id']} must end with {CLASS_COUNT} outputs."
             )
     return artifact
-
-
-@lru_cache(maxsize=1)
-def load_digits_dataset() -> tuple[np.ndarray, np.ndarray]:
-    dataset = load_digits()
-    return dataset.data.astype(float), dataset.target.astype(int)
 
 
 def public_model_metadata(artifact: dict[str, Any]) -> list[dict[str, Any]]:
@@ -141,10 +141,11 @@ def get_test_indices(artifact: dict[str, Any]) -> list[int]:
 
 
 def serialize_sample(artifact: dict[str, Any], index: int) -> dict[str, Any]:
-    features, labels = load_digits_dataset()
-    if index < 0 or index >= len(features):
+    samples = np.asarray(artifact.get("test_samples"), dtype=float)
+    labels = np.asarray(artifact.get("test_labels"), dtype=int)
+    if index < 0 or index >= len(samples):
         raise IndexError("Sample index is outside the digits dataset.")
-    pixels = features[index].reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist()
+    pixels = samples[index].reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist()
     return {
         "index": index,
         "pixels": pixels,
@@ -216,35 +217,67 @@ def _resize_area_average(
     few isolated dark cells.
     """
     source_height, source_width = image.shape
-    result = np.zeros((target_height, target_width), dtype=float)
     y_scale = source_height / target_height
     x_scale = source_width / target_width
 
-    for target_y in range(target_height):
-        source_y_start = target_y * y_scale
-        source_y_end = (target_y + 1) * y_scale
-        first_source_y = int(np.floor(source_y_start))
-        last_source_y = int(np.ceil(source_y_end))
-        for target_x in range(target_width):
-            source_x_start = target_x * x_scale
-            source_x_end = (target_x + 1) * x_scale
-            first_source_x = int(np.floor(source_x_start))
-            last_source_x = int(np.ceil(source_x_end))
-            total = 0.0
-            covered_area = 0.0
-            for source_y in range(first_source_y, last_source_y):
-                y_overlap = min(source_y_end, source_y + 1) - max(source_y_start, source_y)
-                if y_overlap <= 0:
-                    continue
-                for source_x in range(first_source_x, last_source_x):
-                    x_overlap = min(source_x_end, source_x + 1) - max(source_x_start, source_x)
-                    if x_overlap <= 0:
-                        continue
-                    area = y_overlap * x_overlap
-                    total += float(image[source_y, source_x]) * area
-                    covered_area += area
-            result[target_y, target_x] = total / covered_area if covered_area else 0.0
-    return result
+    def overlap_weights(source_size: int, target_size: int) -> np.ndarray:
+        source_positions = np.arange(source_size, dtype=float)[None, :]
+        target_starts = (np.arange(target_size, dtype=float) * source_size / target_size)[:, None]
+        target_ends = ((np.arange(target_size, dtype=float) + 1) * source_size / target_size)[:, None]
+        return np.clip(
+            np.minimum(target_ends, source_positions + 1)
+            - np.maximum(target_starts, source_positions),
+            0.0,
+            None,
+        )
+
+    y_weights = overlap_weights(source_height, target_height)
+    x_weights = overlap_weights(source_width, target_width)
+    return (y_weights @ np.asarray(image, dtype=float) @ x_weights.T) / (y_scale * x_scale)
+
+
+def preprocess_dataset_pixels(pixels: np.ndarray) -> np.ndarray:
+    """Normalize one grayscale source image with the same geometry as freehand input."""
+    values = np.asarray(pixels, dtype=float).reshape(-1)
+    if values.size == 0:
+        raise ValueError("The source image is empty.")
+    if values.ndim != 2:
+        side = int(np.sqrt(values.size))
+        if side * side != values.size:
+            raise ValueError("The source image must be a square grayscale image.")
+        values = values.reshape(side, side)
+    return _normalize_source_image(values).reshape(-1)
+
+
+def _center_in_square(cropped: np.ndarray) -> np.ndarray:
+    """Keep a cropped digit's aspect ratio while centering it in a square canvas."""
+    height, width = cropped.shape
+    square_size = max(height, width)
+    square = np.zeros((square_size, square_size), dtype=float)
+    top = (square_size - height) // 2
+    left = (square_size - width) // 2
+    square[top:top + height, left:left + width] = cropped
+    return square
+
+
+def _normalize_source_image(image: np.ndarray) -> np.ndarray:
+    """Binarize, denoise, crop, center in a square, then resize to 8x8."""
+    image = np.asarray(image, dtype=float)
+    if image.ndim != 2 or not np.isfinite(image).all() or np.any(image < 0):
+        raise ValueError("The source image must be a finite non-negative grayscale matrix.")
+    maximum = float(image.max())
+    if maximum <= 0:
+        raise ValueError("The source image does not contain a visible digit.")
+    threshold = max(1.0, maximum * 0.5)
+    binary = np.where(image >= threshold, maximum, 0.0)
+    cleaned, (left, top, right, bottom) = _largest_component(binary, threshold)
+    cropped = cleaned[top:bottom, left:right]
+    square = _center_in_square(cropped)
+    resized = _resize_area_average(square, PIXEL_SIZE, PIXEL_SIZE)
+    resized_maximum = float(resized.max())
+    if resized_maximum <= 0:
+        raise ValueError("The source image does not contain a visible digit.")
+    return np.rint(np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)).astype(float)
 
 
 def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
@@ -256,20 +289,12 @@ def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]
 
     image = values.reshape(DRAWING_SIZE, DRAWING_SIZE)
     maximum = float(image.max())
-    threshold = max(1.0, maximum * 0.08)
+    threshold = max(1.0, maximum * 0.5)
     cleaned, (left, top, right, bottom) = _largest_component(image, threshold)
     cropped = cleaned[top:bottom, left:right]
     content_height, content_width = cropped.shape
-    # The crop is intentionally resized, not padded. Padding a portrait crop
-    # creates empty rows above and below, which is not the requested flow.
+    normalized = _normalize_source_image(image).astype(int)
     square_size = max(content_height, content_width)
-    square = _resize_area_average(cropped, square_size, square_size)
-    resized = _resize_area_average(square, PIXEL_SIZE, PIXEL_SIZE)
-    resized_maximum = float(resized.max())
-    if resized_maximum <= 0:
-        raise ValueError("The drawing does not contain a visible digit.")
-    normalized = np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)
-    normalized = np.rint(normalized).astype(int)
     metadata = {
         "source_size": [DRAWING_SIZE, DRAWING_SIZE],
         "threshold": threshold,
@@ -343,15 +368,12 @@ def _predict_features(
     if not np.isfinite(features).all() or np.any(features < 0) or np.any(features > 16):
         raise ValueError("Pixel values must be finite and between 0 and 16.")
 
-    dataset_features, dataset_labels = load_digits_dataset()
     true_label: int | None = None
     if sample_index is not None:
-        if sample_index < 0 or sample_index >= len(dataset_features):
+        labels = np.asarray(artifact.get("test_labels"), dtype=int)
+        if sample_index < 0 or sample_index >= len(labels):
             raise ValueError("Sample index is outside the digits dataset.")
-        expected = dataset_features[sample_index]
-        if not np.allclose(expected, features):
-            raise ValueError("sample_index does not match the supplied pixels.")
-        true_label = int(dataset_labels[sample_index])
+        true_label = int(labels[sample_index])
 
     preprocessing = artifact["preprocessing"]
     mean = _as_vector(preprocessing["mean"], PIXEL_COUNT, "preprocessing mean")
@@ -377,10 +399,18 @@ def predict_digits(
     pixels: np.ndarray,
     sample_index: int | None = None,
 ) -> dict[str, Any]:
-    features = np.asarray(pixels, dtype=float).reshape(-1)
-    if features.size != PIXEL_COUNT:
+    raw_features = np.asarray(pixels, dtype=float).reshape(-1)
+    if raw_features.size != PIXEL_COUNT:
         raise ValueError(f"Expected {PIXEL_COUNT} pixel values.")
-    return _predict_features(artifact, features, sample_index)
+    if not np.isfinite(raw_features).all() or np.any(raw_features < 0) or np.any(raw_features > 16):
+        raise ValueError("Pixel values must be finite and between 0 and 16.")
+    if sample_index is not None:
+        samples = np.asarray(artifact.get("test_samples"), dtype=float)
+        if sample_index < 0 or sample_index >= len(samples):
+            raise ValueError("Sample index is outside the digits dataset.")
+        if not np.allclose(samples[sample_index], raw_features):
+            raise ValueError("sample_index does not match the supplied pixels.")
+    return _predict_features(artifact, raw_features, sample_index)
 
 
 def predict_drawing(artifact: dict[str, Any], drawing: np.ndarray) -> dict[str, Any]:

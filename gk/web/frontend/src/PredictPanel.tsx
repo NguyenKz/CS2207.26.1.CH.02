@@ -557,7 +557,7 @@ export function PredictPanel(): ReactElement {
         <section className="panel-surface predict-state" aria-live="polite">
           <span className="section-kicker">LOADING MODEL ARTIFACT</span>
           <h2>Preparing the four digit readers</h2>
-          <p>Loading the saved weights and the test samples from scikit-learn.</p>
+          <p>Loading the saved weights and normalized MNIST test samples.</p>
         </section>
       )}
 
@@ -607,7 +607,7 @@ export function PredictPanel(): ReactElement {
             </section>
             <section className="predict-dataset-note">
               <span className="section-kicker">DATASET</span>
-              <strong>load_digits</strong>
+              <strong>{meta.dataset.name}</strong>
               <p>{meta.dataset.sample_count.toLocaleString("en-US")} samples · {meta.dataset.feature_count} input features · {meta.dataset.class_count} classes</p>
               <code>{meta.preprocessing.name} · test set {meta.test_indices.length} samples</code>
             </section>

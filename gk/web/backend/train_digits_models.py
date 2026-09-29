@@ -5,148 +5,82 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
-from typing import Any
 
 import numpy as np
-from sklearn.datasets import load_digits
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 
+from .digits_dataset import load_mnist, normalize_mnist_images
+from .digits_models import (
+    CLASS_COUNT,
+    LOGISTIC_CANDIDATES,
+    MODEL_CONFIGS,
+    MLP_SEARCH_CONFIGS,
+    PIXEL_COUNT,
+    RANDOM_SEED,
+    SEARCH_MAX_ITER,
+    SEARCH_ROUNDS,
+    build_logistic,
+    build_mlp,
+    choose_search_subset,
+    export_layers,
+    model_metadata,
+    parameter_count,
+)
 
-RANDOM_SEED = 42
+
 OUTPUT_PATH = Path(__file__).with_name("artifacts") / "digits_models.json"
-PIXEL_COUNT = 64
-CLASS_COUNT = 10
-TUNED_CANDIDATES = ((8,), (16,), (8, 8), (16, 8))
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
-def parameter_count(layers: list[dict[str, Any]]) -> int:
-    return sum(
-        len(layer["weights"]) * len(layer["weights"][0]) + len(layer["biases"])
-        for layer in layers
-    )
-
-
-def export_layers(model: Any, hidden_activation: str | None) -> list[dict[str, Any]]:
-    if not hasattr(model, "coefs_"):
-        return [
-            {
-                "name": "Output",
-                "kind": "output",
-                "activation": "softmax",
-                "weights": model.coef_.T.astype(float).tolist(),
-                "biases": model.intercept_.astype(float).tolist(),
-            }
-        ]
-
-    exported: list[dict[str, Any]] = []
-    for index, (weights, biases) in enumerate(zip(model.coefs_, model.intercepts_)):
-        is_output = index == len(model.coefs_) - 1
-        exported.append(
-            {
-                "name": "Output" if is_output else f"Hidden {index + 1}",
-                "kind": "output" if is_output else "hidden",
-                "activation": "softmax" if is_output else hidden_activation,
-                "weights": weights.astype(float).tolist(),
-                "biases": biases.astype(float).tolist(),
-            }
-        )
-    return exported
-
-
-def model_metadata(
-    model_id: str,
-    name: str,
-    kind: str,
-    model: Any,
-    architecture: list[int],
-    activations: list[str],
-    test_accuracy: float,
-    validation_accuracy: float | None,
-    hidden_activation: str | None,
-    source: str | None = None,
-    source_url: str | None = None,
-) -> dict[str, Any]:
-    layers = export_layers(model, hidden_activation)
-    metadata = {
-        "id": model_id,
-        "name": name,
-        "kind": kind,
-        "architecture": architecture,
-        "activations": activations,
-        "parameter_count": parameter_count(layers),
-        "test_accuracy": float(test_accuracy),
-        "validation_accuracy": (
-            None if validation_accuracy is None else float(validation_accuracy)
-        ),
-        "layers": layers,
-    }
-    if source is not None:
-        metadata["source"] = source
-    if source_url is not None:
-        metadata["source_url"] = source_url
-    return metadata
-
-
-def build_mlp(hidden_layers: tuple[int, ...], activation: str = "tanh") -> MLPClassifier:
-    return MLPClassifier(
-        hidden_layer_sizes=hidden_layers,
-        activation=activation,
-        solver="lbfgs",
-        max_iter=5000,
-        random_state=RANDOM_SEED,
-    )
-
-
 def main() -> None:
-    dataset = load_digits()
-    features = dataset.data.astype(float)
-    labels = dataset.target.astype(int)
-    indices = np.arange(len(labels))
-    fit_indices, test_indices = train_test_split(
-        indices,
+    raw_train_images, labels, raw_test_images, test_labels = load_mnist()
+    features, test_features = normalize_mnist_images(raw_train_images, raw_test_images)
+    train_indices, validation_indices = train_test_split(
+        np.arange(len(labels)),
         test_size=0.2,
         stratify=labels,
-        random_state=RANDOM_SEED,
-    )
-    train_indices, validation_indices = train_test_split(
-        fit_indices,
-        test_size=0.2,
-        stratify=labels[fit_indices],
         random_state=RANDOM_SEED + 1,
     )
 
-    tuning_scaler = StandardScaler().fit(features[train_indices])
-    tuning_train = tuning_scaler.transform(features[train_indices])
+    training_features = features[train_indices]
+    training_labels = labels[train_indices]
+    tuning_scaler = StandardScaler().fit(training_features)
+    tuning_train = tuning_scaler.transform(training_features)
     tuning_validation = tuning_scaler.transform(features[validation_indices])
+    search_train, search_labels, search_count = choose_search_subset(tuning_train, training_labels)
 
-    tuned_scores: list[tuple[float, int, tuple[int, ...]]] = []
-    for hidden_layers in TUNED_CANDIDATES:
-        candidate = build_mlp(hidden_layers, activation="relu")
-        candidate.fit(tuning_train, labels[train_indices])
+    logistic_scores: list[tuple[float, float]] = []
+    for C in LOGISTIC_CANDIDATES:
+        candidate = build_logistic(C)
+        candidate.fit(search_train, search_labels)
+        logistic_scores.append((float(candidate.score(tuning_validation, labels[validation_indices])), C))
+    logistic_scores.sort(key=lambda item: (-item[0], item[1]))
+    logistic_validation_score, logistic_C = logistic_scores[0]
+
+    tuned_scores: list[tuple[float, int, tuple[int, ...], str, float]] = []
+    for hidden_layers, activation, learning_rate in MLP_SEARCH_CONFIGS:
+        candidate = build_mlp(hidden_layers, activation, learning_rate, max_iter=SEARCH_MAX_ITER)
+        candidate.fit(search_train, search_labels)
         score = candidate.score(tuning_validation, labels[validation_indices])
-        candidate_layers = export_layers(candidate, "relu")
-        tuned_scores.append((float(score), parameter_count(candidate_layers), hidden_layers))
-    tuned_scores.sort(key=lambda item: (-item[0], item[1], len(item[2])))
-    tuned_score, _, tuned_architecture = tuned_scores[0]
+        candidate_layers = export_layers(candidate, activation)
+        tuned_scores.append(
+            (float(score), parameter_count(candidate_layers), hidden_layers, activation, learning_rate)
+        )
+    tuned_scores.sort(key=lambda item: (-item[0], item[1], len(item[2]), item[4]))
+    tuned_score, _, tuned_architecture, tuned_activation, tuned_learning_rate = tuned_scores[0]
 
-    scaler = StandardScaler().fit(features[fit_indices])
-    fit_features = scaler.transform(features[fit_indices])
-    test_features = scaler.transform(features[test_indices])
+    scaler = tuning_scaler
+    fit_features = tuning_train
+    fit_labels = training_labels
+    scaled_test_features = scaler.transform(test_features)
 
     models: list[dict[str, Any]] = []
 
-    logistic = LogisticRegression(
-        max_iter=2000,
-        solver="lbfgs",
-        random_state=RANDOM_SEED,
-    )
-    logistic.fit(fit_features, labels[fit_indices])
+    logistic = build_logistic(logistic_C)
+    logistic.fit(fit_features, fit_labels)
     models.append(
         model_metadata(
             "logistic",
@@ -155,16 +89,22 @@ def main() -> None:
             logistic,
             [PIXEL_COUNT, CLASS_COUNT],
             [],
-            logistic.score(test_features, labels[test_indices]),
-            None,
+            logistic.score(scaled_test_features, test_labels),
+            logistic_validation_score,
             None,
             "scikit-learn LogisticRegression",
             "https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html",
         )
     )
 
-    small_one_layer = build_mlp((4,), activation="tanh")
-    small_one_layer.fit(fit_features, labels[fit_indices])
+    one_layer_config = MODEL_CONFIGS["mlp_4_one_layer"]
+    small_one_layer = build_mlp(
+        one_layer_config["hidden_layer_sizes"],
+        one_layer_config["activation"],
+        one_layer_config["learning_rate_init"],
+        one_layer_config["max_iter"],
+    )
+    small_one_layer.fit(fit_features, fit_labels)
     models.append(
         model_metadata(
             "mlp-4-one-layer",
@@ -173,14 +113,20 @@ def main() -> None:
             small_one_layer,
             [PIXEL_COUNT, 4, CLASS_COUNT],
             ["tanh", "softmax"],
-            small_one_layer.score(test_features, labels[test_indices]),
+            small_one_layer.score(scaled_test_features, test_labels),
             None,
             "tanh",
         )
     )
 
-    small_two_layers = build_mlp((4, 4), activation="tanh")
-    small_two_layers.fit(fit_features, labels[fit_indices])
+    two_layer_config = MODEL_CONFIGS["mlp_4_two_layers"]
+    small_two_layers = build_mlp(
+        two_layer_config["hidden_layer_sizes"],
+        two_layer_config["activation"],
+        two_layer_config["learning_rate_init"],
+        two_layer_config["max_iter"],
+    )
+    small_two_layers.fit(fit_features, fit_labels)
     models.append(
         model_metadata(
             "mlp-4-two-layer",
@@ -189,22 +135,22 @@ def main() -> None:
             small_two_layers,
             [PIXEL_COUNT, 4, 4, CLASS_COUNT],
             ["tanh", "tanh", "softmax"],
-            small_two_layers.score(test_features, labels[test_indices]),
+            small_two_layers.score(scaled_test_features, test_labels),
             None,
             "tanh",
         )
     )
 
-    tuned = build_mlp(tuned_architecture, activation="relu")
-    tuned.fit(fit_features, labels[fit_indices])
-    baseline_test_predictions = logistic.predict(test_features)
-    tuned_test_predictions = tuned.predict(test_features)
-    demo_sample_index = int(test_indices[0])
+    tuned = build_mlp(tuned_architecture, tuned_activation, tuned_learning_rate)
+    tuned.fit(fit_features, fit_labels)
+    baseline_test_predictions = logistic.predict(scaled_test_features)
+    tuned_test_predictions = tuned.predict(scaled_test_features)
+    demo_sample_index = 0
     for index, baseline_prediction, tuned_prediction, target in zip(
-        test_indices,
+        np.arange(len(test_labels)),
         baseline_test_predictions,
         tuned_test_predictions,
-        labels[test_indices],
+        test_labels,
     ):
         if baseline_prediction != target and tuned_prediction == target:
             demo_sample_index = int(index)
@@ -216,38 +162,74 @@ def main() -> None:
             "ann",
             tuned,
             [PIXEL_COUNT, *tuned_architecture, CLASS_COUNT],
-            ["relu"] * len(tuned_architecture) + ["softmax"],
-            tuned.score(test_features, labels[test_indices]),
+            [tuned_activation] * len(tuned_architecture) + ["softmax"],
+            tuned.score(scaled_test_features, test_labels),
             tuned_score,
-            "relu",
+            tuned_activation,
         )
     )
 
     artifact = {
-        "version": 1,
+        "version": 3,
         "random_seed": RANDOM_SEED,
         "dataset": {
-            "name": "sklearn.datasets.load_digits",
-            "description": "Handwritten digits represented as 8x8 grayscale pixels.",
-            "sample_count": int(len(features)),
+            "name": "MNIST handwritten digits",
+            "description": "Real handwritten digit images from MNIST, normalized to 8x8 grayscale pixels for this demo.",
+            "sample_count": int(len(labels) + len(test_labels)),
+            "training_sample_count": int(len(labels)),
+            "test_sample_count": int(len(test_labels)),
             "input_shape": [8, 8],
             "feature_count": PIXEL_COUNT,
             "class_count": CLASS_COUNT,
             "pixel_min": 0,
             "pixel_max": 16,
-            "source_url": "https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html",
+            "original_input_shape": [28, 28],
+            "source_url": "https://yann.lecun.com/exdb/mnist/",
         },
         "preprocessing": {
-            "name": "StandardScaler",
+            "name": "CropSquareResize8 + StandardScaler",
+            "feature_transform": "denoise at 50% of max ink, keep largest component, crop foreground, resize to square, area-average resize to 8x8, scale intensity to 0..16",
             "mean": scaler.mean_.astype(float).tolist(),
             "std": scaler.scale_.astype(float).tolist(),
         },
-        "fit_indices": fit_indices.astype(int).tolist(),
-        "test_indices": test_indices.astype(int).tolist(),
+        "fit_indices": train_indices.astype(int).tolist(),
+        "validation_indices": validation_indices.astype(int).tolist(),
+        "test_indices": np.arange(len(test_labels)).astype(int).tolist(),
+        "test_samples": np.rint(test_features).astype(int).tolist(),
+        "test_labels": test_labels.astype(int).tolist(),
         "demo_sample_index": demo_sample_index,
+        "augmentation": {
+            "source_count": int(len(train_indices)),
+            "generated_count": int(len(training_features)),
+            "shifts": [],
+            "rotations_degrees": [],
+            "applied_to": "disabled for MNIST; the source already contains 60,000 real handwritten training images",
+        },
+        "baseline_tuning": {
+            "rounds": SEARCH_ROUNDS,
+            "C_candidates": list(LOGISTIC_CANDIDATES),
+            "selected_C": logistic_C,
+            "validation_accuracy": logistic_validation_score,
+        },
         "tuning": {
-            "candidates": [list(candidate) for candidate in TUNED_CANDIDATES],
+            "rounds": len(MLP_SEARCH_CONFIGS),
+            "search_sample_count": int(search_count),
+            "solver": "adam",
+            "learning_rate_init": 0.001,
+            "search_max_iter": SEARCH_MAX_ITER,
+            "final_max_iter": 350,
+            "early_stopping": False,
+            "candidates": [
+                {
+                    "architecture": list(architecture),
+                    "activation": activation,
+                    "learning_rate_init": learning_rate,
+                }
+                for architecture, activation, learning_rate in MLP_SEARCH_CONFIGS
+            ],
             "selected": list(tuned_architecture),
+            "selected_activation": tuned_activation,
+            "selected_learning_rate_init": tuned_learning_rate,
             "validation_accuracy": tuned_score,
         },
         "models": models,
