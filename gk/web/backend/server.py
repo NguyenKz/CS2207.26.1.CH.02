@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -20,6 +20,15 @@ from .ann_core import (
     SUPPORTED_ACTIVATIONS,
     SimpleANN,
     prepare_classification_data,
+)
+from .digits_predict import (
+    DigitsArtifactError,
+    get_test_indices,
+    load_digits_artifact,
+    predict_digits,
+    predict_drawing,
+    public_model_metadata,
+    serialize_sample,
 )
 
 app = FastAPI(title="ANN Training Lab")
@@ -264,6 +273,82 @@ async def stream_training(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class PredictRequest(BaseModel):
+    pixels: list[float] | None = Field(default=None, min_length=64, max_length=64)
+    drawing: list[float] | None = Field(default=None, min_length=128 * 128, max_length=128 * 128)
+    sample_index: int | None = Field(default=None, ge=0)
+
+    @field_validator("pixels")
+    @classmethod
+    def validate_pixels(cls, value: list[float] | None) -> list[float] | None:
+        if value is not None and any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
+            raise ValueError("pixel values must be between 0 and 16")
+        return value
+
+    @field_validator("drawing")
+    @classmethod
+    def validate_drawing(cls, value: list[float] | None) -> list[float] | None:
+        if value is not None and any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
+            raise ValueError("drawing values must be finite and between 0 and 16")
+        return value
+
+    @model_validator(mode="after")
+    def validate_input(self) -> "PredictRequest":
+        if (self.pixels is None) == (self.drawing is None):
+            raise ValueError("Provide exactly one of pixels or drawing")
+        if self.sample_index is not None and self.drawing is not None:
+            raise ValueError("sample_index can only be used with pixels")
+        return self
+
+
+def _get_digits_artifact() -> dict[str, Any]:
+    try:
+        return load_digits_artifact()
+    except DigitsArtifactError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/predict/meta")
+async def predict_meta() -> dict[str, Any]:
+    artifact = _get_digits_artifact()
+    return {
+        "ready": True,
+        "dataset": artifact["dataset"],
+        "preprocessing": {"name": artifact["preprocessing"]["name"]},
+        "test_indices": get_test_indices(artifact),
+        "default_sample_index": int(artifact.get("demo_sample_index", get_test_indices(artifact)[0])),
+        "models": public_model_metadata(artifact),
+    }
+
+
+@app.get("/predict/sample")
+async def predict_sample(index: int | None = Query(default=None, ge=0)) -> dict[str, Any]:
+    artifact = _get_digits_artifact()
+    test_indices = get_test_indices(artifact)
+    selected_index = index if index is not None else test_indices[0]
+    if selected_index not in set(test_indices):
+        raise HTTPException(status_code=400, detail="Sample index must belong to the test set.")
+    try:
+        return serialize_sample(artifact, selected_index)
+    except IndexError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/predict")
+async def predict(request: PredictRequest) -> dict[str, Any]:
+    artifact = _get_digits_artifact()
+    if request.sample_index is not None and request.sample_index not in set(
+        get_test_indices(artifact)
+    ):
+        raise HTTPException(status_code=400, detail="Sample index must belong to the test set.")
+    try:
+        if request.drawing is not None:
+            return predict_drawing(artifact, np.asarray(request.drawing, dtype=float))
+        return predict_digits(artifact, np.asarray(request.pixels, dtype=float), request.sample_index)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @dataclass

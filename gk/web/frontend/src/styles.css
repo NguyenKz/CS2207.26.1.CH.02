@@ -16,6 +16,952 @@
   --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 
+/* Predict is a focused teaching surface: the pixel input stays beside the
+   real model comparison so the question and the evidence remain visible together. */
+.predict-shell {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.predict-shell > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.predict-hero .lesson-body {
+  padding: 18px 22px 16px;
+}
+
+.predict-hero h1 {
+  max-width: none;
+  margin-top: 0;
+  font-size: clamp(26px, 3.4vw, 46px);
+}
+
+.predict-state {
+  padding: 24px;
+}
+
+.predict-state h2 {
+  margin-top: 8px;
+}
+
+.predict-state p {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.predict-state-error {
+  border-color: #c98c80;
+}
+
+.predict-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, .32fr) minmax(0, .68fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.predict-input-column,
+.predict-result-column {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.predict-input-panel,
+.predict-overview,
+.predict-flow-panel {
+  min-width: 0;
+  padding: 18px;
+}
+
+.predict-pixel-frame {
+  width: min(100%, 320px);
+  margin: 16px auto 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: #f0ece4;
+}
+
+.predict-drawing-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid #303b41;
+  background: var(--ink);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.predict-drawing-canvas:focus-visible {
+  outline: 3px solid rgba(44, 122, 123, .45);
+  outline-offset: 3px;
+}
+
+.predict-pixel-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  color: var(--muted);
+  font: 9px var(--mono);
+}
+
+.predict-normalized-block {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.predict-normalized-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.predict-normalized-heading small {
+  color: var(--muted);
+  font: 9px var(--mono);
+  text-align: right;
+}
+
+.predict-normalized-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 2px;
+  width: min(100%, 176px);
+  margin: 9px auto 0;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.predict-normalized-cell {
+  min-width: 0;
+  min-height: 0;
+  background: var(--paper);
+}
+
+.predict-preprocess-meta {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font: 9px/1.45 var(--mono);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.predict-sample-actions,
+.predict-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.predict-sample-actions .button {
+  flex: 1 1 90px;
+  min-width: 0;
+  padding: 8px 7px;
+  font-size: 10px;
+}
+
+.predict-sample-actions > .button,
+.predict-control-actions > .button {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.predict-control-actions {
+  margin-top: 10px;
+}
+
+.predict-control-actions .button-primary {
+  flex: 1 1 0;
+}
+
+.predict-input-note {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.predict-dataset-note {
+  padding: 14px 2px 0;
+  border-top: 1px solid var(--line);
+}
+
+.predict-dataset-note strong,
+.predict-dataset-note p,
+.predict-dataset-note code {
+  display: block;
+}
+
+.predict-dataset-note strong {
+  margin-top: 7px;
+  font-size: 16px;
+}
+
+.predict-dataset-note p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.predict-dataset-note code {
+  margin-top: 7px;
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
+.predict-pipeline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font: 10px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.predict-pipeline b {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.predict-model-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.predict-model-card {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: #f8f5ee;
+}
+
+.predict-model-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.predict-model-select {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.predict-model-select:hover {
+  background: #f1ede5;
+}
+
+.predict-model-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.predict-model-state {
+  color: var(--muted);
+  font: 9px var(--mono);
+}
+
+.predict-model-select strong {
+  min-height: 34px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.predict-baseline-source {
+  display: block;
+  color: var(--teal);
+  font: 9px/1.35 var(--mono);
+}
+
+.predict-model-select code {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font: 10px var(--mono);
+}
+
+.predict-model-meta {
+  min-height: 28px;
+  color: var(--muted);
+  font: 9px var(--mono);
+  line-height: 1.35;
+}
+
+.predict-model-result {
+  min-width: 0;
+  padding: 10px 12px 12px;
+}
+
+.predict-model-prediction {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.predict-model-prediction span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.predict-model-prediction strong {
+  font-size: 29px;
+  line-height: 1;
+}
+
+.predict-model-prediction code {
+  color: var(--teal);
+  font: 10px var(--mono);
+}
+
+.predict-verdict {
+  display: inline-block;
+  margin-top: 8px;
+  font: 9px var(--mono);
+}
+
+.verdict-correct { color: #377d5f; }
+.verdict-wrong { color: #a33e31; }
+.verdict-custom { color: var(--muted); }
+
+.predict-model-empty,
+.predict-explanation {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.predict-forward-flow {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 14px 0 18px;
+  min-width: 0;
+}
+
+.predict-flow-layer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.predict-flow-step {
+  display: grid;
+  min-width: 108px;
+  gap: 4px;
+  padding: 10px;
+  border-top: 2px solid var(--accent);
+  background: #f1ede5;
+}
+
+.predict-flow-step.is-output {
+  border-top-color: var(--teal);
+}
+
+.predict-flow-step.is-preprocess {
+  border-top-color: #b68a42;
+}
+
+.predict-flow-step strong {
+  font-size: 12px;
+}
+
+.predict-flow-step small {
+  color: var(--muted);
+  font: 9px var(--mono);
+}
+
+.predict-flow-arrow {
+  align-self: center;
+  color: var(--accent);
+  font: 16px var(--mono);
+}
+
+.predict-trace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(220px, .75fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.predict-activation-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.predict-activation-strip {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  background: #f8f5ee;
+}
+
+.predict-activation-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.predict-activation-heading strong {
+  font-size: 11px;
+}
+
+.predict-activation-heading code {
+  color: var(--muted);
+  font: 9px var(--mono);
+}
+
+.predict-activation-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  gap: 4px;
+}
+
+.predict-activation-cell {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.predict-activation-cell > span {
+  display: block;
+  width: 100%;
+  height: 20px;
+  border: 1px solid rgba(216, 211, 201, .8);
+  background: var(--accent);
+}
+
+.predict-activation-cell > span.is-negative {
+  background: #6b5ca5;
+}
+
+.predict-activation-cell small {
+  color: var(--muted);
+  font: 8px var(--mono);
+}
+
+.predict-activation-cell code {
+  font: 9px var(--mono);
+}
+
+.predict-output-panel {
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.predict-probability-bars {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.predict-probability-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font: 10px var(--mono);
+}
+
+.predict-probability-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background: #e2ddd3;
+}
+
+.predict-probability-track span {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+}
+
+.predict-probability-row code {
+  color: var(--muted);
+  text-align: right;
+  font: 9px var(--mono);
+}
+
+.predict-probability-bars.is-compact {
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.predict-probability-bars.is-compact .predict-probability-row {
+  grid-template-columns: 10px minmax(0, 1fr) 35px;
+  gap: 5px;
+  font-size: 9px;
+}
+
+.predict-probability-bars.is-compact .predict-probability-track {
+  height: 4px;
+}
+
+.predict-probability-bars.is-compact .predict-probability-row code {
+  font-size: 8px;
+}
+
+.predict-explanation {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 1100px) {
+  .app-shell:has(.predict-shell) {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .app-shell:has(.predict-shell) .predict-shell {
+    flex: 1 1 auto;
+  }
+
+  .app-shell:has(.predict-shell) .predict-hero .lesson-body {
+    padding: 11px 18px 9px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-hero h1 {
+    font-size: 28px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-layout {
+    align-items: stretch;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-column,
+  .app-shell:has(.predict-shell) .predict-result-column {
+    align-content: start;
+  }
+}
+
+@media (max-width: 1120px) {
+  .predict-model-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .predict-layout {
+    grid-template-columns: minmax(250px, .38fr) minmax(0, .62fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .predict-hero .lesson-body {
+    padding: 18px 14px 16px;
+  }
+
+  .predict-hero h1 {
+    font-size: clamp(28px, 9vw, 42px);
+  }
+
+  .predict-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .predict-input-panel,
+  .predict-overview,
+  .predict-flow-panel {
+    padding: 14px;
+  }
+
+  .predict-pixel-frame {
+    width: min(100%, 300px);
+  }
+
+  .predict-trace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .predict-output-panel {
+    padding: 14px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .predict-model-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .predict-pipeline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .predict-pipeline b {
+    transform: rotate(90deg);
+    margin: -2px 0 -2px 4px;
+  }
+
+  .predict-forward-flow {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .predict-flow-layer {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .predict-flow-layer .predict-flow-arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+
+  .predict-flow-step {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .predict-control-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .predict-control-actions .button {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1100px) {
+  body:has(.predict-shell) {
+    overflow: hidden;
+  }
+
+  .app-shell:has(.predict-shell) {
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .app-topbar {
+    margin-bottom: 7px;
+    padding-bottom: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-shell {
+    min-height: 0;
+    height: calc(100vh - 58px);
+    gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-hero .lesson-body {
+    padding: 7px 12px 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-hero h1 {
+    font-size: 24px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(250px, .31fr) minmax(0, .69fr);
+    gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-column,
+  .app-shell:has(.predict-shell) .predict-result-column {
+    min-height: 0;
+    gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-panel,
+  .app-shell:has(.predict-shell) .predict-overview,
+  .app-shell:has(.predict-shell) .predict-flow-panel {
+    padding: 10px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-panel {
+    overflow: hidden;
+  }
+
+  .app-shell:has(.predict-shell) .predict-pixel-frame {
+    width: min(100%, 220px);
+    margin: 6px auto 7px;
+    padding: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-pixel-scale {
+    margin-top: 5px;
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-normalized-block {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-normalized-heading small,
+  .app-shell:has(.predict-shell) .predict-preprocess-meta {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-normalized-grid {
+    width: min(100%, 96px);
+    margin-top: 5px;
+    gap: 1px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-sample-actions,
+  .app-shell:has(.predict-shell) .predict-control-actions {
+    gap: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-sample-actions .button,
+  .app-shell:has(.predict-shell) .predict-control-actions .button {
+    padding: 6px 5px;
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-control-actions {
+    margin-top: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-note {
+    margin-top: 6px;
+    font-size: 8px;
+    line-height: 1.25;
+  }
+
+  .app-shell:has(.predict-shell) .predict-dataset-note {
+    padding: 7px 2px 0;
+  }
+
+  .app-shell:has(.predict-shell) .predict-dataset-note strong {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-dataset-note p,
+  .app-shell:has(.predict-shell) .predict-dataset-note code {
+    margin-top: 2px;
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-overview,
+  .app-shell:has(.predict-shell) .predict-flow-panel {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.predict-shell) .predict-overview .section-heading,
+  .app-shell:has(.predict-shell) .predict-flow-panel .section-heading {
+    margin-bottom: 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-overview h2,
+  .app-shell:has(.predict-shell) .predict-flow-panel h2 {
+    font-size: 15px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-overview .section-heading p,
+  .app-shell:has(.predict-shell) .predict-flow-panel .section-heading p {
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-pipeline {
+    gap: 5px;
+    margin: 6px 0;
+    padding: 6px 8px;
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-pipeline b {
+    font-size: 11px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-grid {
+    gap: 5px;
+    min-height: 0;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-select {
+    gap: 4px;
+    padding: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-state,
+  .app-shell:has(.predict-shell) .predict-baseline-source,
+  .app-shell:has(.predict-shell) .predict-model-meta {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-select strong {
+    min-height: 24px;
+    font-size: 10px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-select code {
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-result {
+    padding: 6px 7px 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-prediction span,
+  .app-shell:has(.predict-shell) .predict-verdict {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-prediction strong {
+    font-size: 22px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-model-prediction code {
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-verdict {
+    margin-top: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-bars.is-compact {
+    gap: 1px;
+    margin-top: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-bars.is-compact .predict-probability-row {
+    grid-template-columns: 8px minmax(0, 1fr) 29px;
+    gap: 3px;
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-bars.is-compact .predict-probability-track {
+    height: 3px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-bars.is-compact .predict-probability-row code {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-forward-flow {
+    gap: 4px;
+    margin: 6px 0 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-flow-layer {
+    gap: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-flow-step {
+    min-width: 82px;
+    gap: 2px;
+    padding: 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-flow-step strong {
+    font-size: 9px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-flow-step small,
+  .app-shell:has(.predict-shell) .predict-flow-arrow {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-trace-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(150px, .8fr);
+    gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-list {
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-strip {
+    padding: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-heading {
+    margin-bottom: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-heading strong,
+  .app-shell:has(.predict-shell) .predict-activation-heading code {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-values {
+    gap: 2px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-cell > span {
+    height: 10px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-activation-cell small,
+  .app-shell:has(.predict-shell) .predict-activation-cell code,
+  .app-shell:has(.predict-shell) .predict-probability-row,
+  .app-shell:has(.predict-shell) .predict-probability-row code {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-output-panel {
+    padding-left: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-bars {
+    gap: 2px;
+    margin-top: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-row {
+    grid-template-columns: 9px minmax(0, 1fr) 32px;
+    gap: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-probability-track {
+    height: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-explanation {
+    margin-top: 6px;
+    padding-top: 5px;
+    font-size: 8px;
+    line-height: 1.25;
+  }
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select { font: inherit; }
@@ -828,9 +1774,9 @@ button.studio-layer-block:hover,
     gap: 16px;
   }
 
-  .app-shell:has(.inspect-shell) .inspect-hero .lesson-body {
-    padding: 14px 18px 12px;
-  }
+.app-shell:has(.inspect-shell) .inspect-hero .lesson-body {
+  padding: 14px 18px 12px;
+}
 
   .app-shell:has(.inspect-shell) .inspect-hero h1 {
     margin-top: 6px;

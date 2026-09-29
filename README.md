@@ -78,6 +78,30 @@ Hoặc chạy cả backend và frontend bằng một lệnh:
 ./run.sh
 ```
 
+## Tab Predict với chữ số viết tay 8×8
+
+Tab `Predict` dùng dataset thật `sklearn.datasets.load_digits`. Bốn model được train offline trên cùng một split dữ liệu:
+
+- `Logistic Regression`: baseline tuyến tính chính thức từ scikit-learn, `64 → 10`.
+- MLP một hidden layer: `64 → 4 → 10`.
+- MLP hai hidden layer: `64 → 4 → 4 → 10`.
+- Compact tuned MLP: kiến trúc được chọn từ một danh sách nhỏ bằng validation accuracy.
+
+Artifact weight được lưu tại `gk/web/backend/artifacts/digits_models.json`. Khi chạy web, backend chỉ đọc artifact và thực hiện forward pass bằng NumPy. Không có quá trình train lại khi mở tab `Predict`.
+
+Tạo lại artifact sau khi thay đổi script hoặc dependency:
+
+```bash
+source .venv/bin/activate
+python -m gk.web.backend.train_digits_models
+```
+
+Trang Predict cho phép chọn mẫu trong test set hoặc vẽ tự do trên canvas. `test accuracy` là metric của toàn bộ test set; `predicted digit` và `confidence` là kết quả của mẫu đang hiển thị.
+
+Baseline dùng implementation chính thức [`sklearn.linear_model.LogisticRegression`](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html), cùng `StandardScaler`, train/test split và random seed với các model ANN. Dataset chữ số lấy từ [`sklearn.datasets.load_digits`](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html). Accuracy hiển thị trong app được đo lại trên test set của project, không lấy từ trang tài liệu.
+
+Người dùng cũng có thể vẽ tự do trên canvas. Backend sẽ khử nhiễu, giữ vùng nét lớn nhất, crop, vuông hóa, resize về 8×8 rồi mới chuẩn hóa và predict. Preview `NORMALIZED INPUT · 8×8` là đúng ảnh cuối cùng được đưa vào model.
+
 ## Lộ trình thực hiện
 
 1. Đọc `very-simple-liner-model` → `very-simple-ann` → `very-simple-n-neurons` → `very-simple-depth` (1 neuron → rộng → sâu).
@@ -86,11 +110,13 @@ Hoặc chạy cả backend và frontend bằng một lệnh:
 4. Chạy notebook Iris với ANN tự viết bằng NumPy.
 5. Kiểm tra output của từng layer trên một mẫu hoa.
 6. Dùng sơ đồ `4 -> 8 -> 3`, loss curve và confusion matrix khi thuyết trình.
-7. Chạy web demo React + FastAPI để quan sát training realtime.
+7. Chạy tab Train để quan sát training realtime.
+8. Chạy tab Predict để so sánh bốn model trên chữ số viết tay thật.
+9. Chạy tab Inspect để xem chi tiết forward pass của một mạng.
 
 ## Phạm vi hiện tại
 
-Project hiện có notebook NumPy tự xây và web demo React + FastAPI. Tab Train stream từng epoch qua WebSocket; tab Predict sẽ được bổ sung ở phase sau.
+Project hiện có notebook NumPy tự xây và web demo React + FastAPI. Tab Train stream từng epoch qua WebSocket; tab Predict dùng weight train offline và tab Inspect cho phép thiết kế, build và xem chi tiết một ANN.
 
 ## Nguồn học tập
 

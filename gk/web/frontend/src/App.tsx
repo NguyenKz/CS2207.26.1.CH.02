@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
 
 import { InspectPanel } from "./InspectPanel";
+import { PredictPanel } from "./PredictPanel";
 
 const ACTIVATIONS = [
   "tanh",
@@ -343,7 +344,7 @@ function ActivationCard({
 }
 
 function App(): ReactElement {
-  const [activeTab, setActiveTab] = useState<"train" | "inspect">("train");
+  const [activeTab, setActiveTab] = useState<"train" | "predict" | "inspect">("train");
   const [runConfig, setRunConfig] = useState<RunConfig>(DEFAULT_CONFIG);
   const [runState, setRunState] = useState<RunState>("idle");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -501,7 +502,7 @@ function App(): ReactElement {
       <header className="topbar app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ANN</div>
-          <div><strong>Training Lab</strong><span>NumPy from scratch · make_classification</span></div>
+          <div><strong>Training Lab</strong><span>ANN from scratch · train · predict · inspect</span></div>
         </div>
         <nav className="tabs" aria-label="Demo sections">
           <button
@@ -512,6 +513,13 @@ function App(): ReactElement {
             Train
           </button>
           <button
+            className={`tab ${activeTab === "predict" ? "tab-active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("predict")}
+          >
+            Predict
+          </button>
+          <button
             className={`tab ${activeTab === "inspect" ? "tab-active" : ""}`}
             type="button"
             onClick={() => setActiveTab("inspect")}
@@ -520,11 +528,13 @@ function App(): ReactElement {
           </button>
         </nav>
         <div className={`connection-pill connection-${connectionState}`}>
-          <span className="status-mark" /> {activeTab === "train" ? connectionState : "http inspect"}
+          <span className="status-mark" /> {activeTab === "train" ? connectionState : `http ${activeTab}`}
         </div>
       </header>
 
-      {activeTab === "inspect" ? (
+      {activeTab === "predict" ? (
+        <PredictPanel />
+      ) : activeTab === "inspect" ? (
         <InspectPanel />
       ) : (
         <>

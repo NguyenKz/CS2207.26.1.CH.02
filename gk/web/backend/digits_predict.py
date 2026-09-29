@@ -1,0 +1,388 @@
+"""Offline-trained digits models and the NumPy forward pass for Predict."""
+
+from __future__ import annotations
+
+import json
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+from sklearn.datasets import load_digits
+
+
+ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "digits_models.json"
+PIXEL_SIZE = 8
+PIXEL_COUNT = PIXEL_SIZE * PIXEL_SIZE
+CLASS_COUNT = 10
+DRAWING_SIZE = 128
+DRAWING_COUNT = DRAWING_SIZE * DRAWING_SIZE
+
+
+class DigitsArtifactError(RuntimeError):
+    """Raised when the offline model artifact is missing or malformed."""
+
+
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    shifted = logits - np.max(logits)
+    probabilities = np.exp(shifted)
+    return probabilities / probabilities.sum()
+
+
+def _apply_activation(values: np.ndarray, name: str) -> np.ndarray:
+    if name == "tanh":
+        return np.tanh(values)
+    if name == "relu":
+        return np.maximum(values, 0.0)
+    if name == "sigmoid":
+        clipped = np.clip(values, -500, 500)
+        return 1.0 / (1.0 + np.exp(-clipped))
+    raise DigitsArtifactError(f"Unsupported activation in artifact: {name}")
+
+
+def _as_matrix(values: Any, shape: tuple[int, int], label: str) -> np.ndarray:
+    matrix = np.asarray(values, dtype=float)
+    if matrix.shape != shape:
+        raise DigitsArtifactError(
+            f"Invalid {label} shape: expected {shape}, received {matrix.shape}"
+        )
+    return matrix
+
+
+def _as_vector(values: Any, size: int, label: str) -> np.ndarray:
+    vector = np.asarray(values, dtype=float)
+    if vector.shape != (size,):
+        raise DigitsArtifactError(
+            f"Invalid {label} shape: expected {(size,)}, received {vector.shape}"
+        )
+    return vector
+
+
+@lru_cache(maxsize=1)
+def load_digits_artifact() -> dict[str, Any]:
+    if not ARTIFACT_PATH.exists():
+        raise DigitsArtifactError(
+            "Digits model artifact is missing. Run "
+            "python -m gk.web.backend.train_digits_models first."
+        )
+    try:
+        artifact = json.loads(ARTIFACT_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise DigitsArtifactError(f"Could not read digits artifact: {error}") from error
+
+    if artifact.get("version") != 1:
+        raise DigitsArtifactError("Unsupported digits artifact version.")
+    if len(artifact.get("models", [])) != 4:
+        raise DigitsArtifactError("Digits artifact must contain exactly four models.")
+    preprocessing = artifact.get("preprocessing", {})
+    _as_vector(preprocessing.get("mean"), PIXEL_COUNT, "preprocessing mean")
+    standard_deviation = _as_vector(
+        preprocessing.get("std"), PIXEL_COUNT, "preprocessing std"
+    )
+    if np.any(standard_deviation <= 0):
+        raise DigitsArtifactError("Preprocessing standard deviations must be positive.")
+
+    for model in artifact["models"]:
+        if not model.get("id") or not model.get("layers"):
+            raise DigitsArtifactError("Every digits model needs an id and layers.")
+        previous_size = PIXEL_COUNT
+        for layer_index, layer in enumerate(model["layers"]):
+            biases = np.asarray(layer.get("biases"), dtype=float)
+            if biases.ndim != 1:
+                raise DigitsArtifactError(
+                    f"Model {model['id']} layer {layer_index} has invalid biases."
+                )
+            _as_matrix(
+                layer.get("weights"),
+                (previous_size, biases.size),
+                f"model {model['id']} layer {layer_index} weights",
+            )
+            previous_size = biases.size
+        if previous_size != CLASS_COUNT:
+            raise DigitsArtifactError(
+                f"Model {model['id']} must end with {CLASS_COUNT} outputs."
+            )
+    return artifact
+
+
+@lru_cache(maxsize=1)
+def load_digits_dataset() -> tuple[np.ndarray, np.ndarray]:
+    dataset = load_digits()
+    return dataset.data.astype(float), dataset.target.astype(int)
+
+
+def public_model_metadata(artifact: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            key: model[key]
+            for key in (
+                "id",
+                "name",
+                "kind",
+                "architecture",
+                "activations",
+                "parameter_count",
+                "test_accuracy",
+                "validation_accuracy",
+                "source",
+                "source_url",
+            )
+            if key in model
+        }
+        for model in artifact["models"]
+    ]
+
+
+def get_test_indices(artifact: dict[str, Any]) -> list[int]:
+    indices = artifact.get("test_indices")
+    if not isinstance(indices, list) or not indices:
+        raise DigitsArtifactError("Digits artifact has no test sample indices.")
+    return [int(index) for index in indices]
+
+
+def serialize_sample(artifact: dict[str, Any], index: int) -> dict[str, Any]:
+    features, labels = load_digits_dataset()
+    if index < 0 or index >= len(features):
+        raise IndexError("Sample index is outside the digits dataset.")
+    pixels = features[index].reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist()
+    return {
+        "index": index,
+        "pixels": pixels,
+        "label": int(labels[index]),
+        "is_test_sample": index in set(get_test_indices(artifact)),
+    }
+
+
+def _largest_component(image: np.ndarray, threshold: float) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    mask = image >= threshold
+    visited = np.zeros(mask.shape, dtype=bool)
+    best_pixels: list[tuple[int, int]] = []
+    best_bounds = (0, 0, 0, 0)
+
+    for start_y, start_x in zip(*np.where(mask)):
+        if visited[start_y, start_x]:
+            continue
+        stack = [(int(start_y), int(start_x))]
+        visited[start_y, start_x] = True
+        component: list[tuple[int, int]] = []
+        min_y = max_y = int(start_y)
+        min_x = max_x = int(start_x)
+
+        while stack:
+            current_y, current_x = stack.pop()
+            component.append((current_y, current_x))
+            min_y = min(min_y, current_y)
+            max_y = max(max_y, current_y)
+            min_x = min(min_x, current_x)
+            max_x = max(max_x, current_x)
+            for offset_y in (-1, 0, 1):
+                for offset_x in (-1, 0, 1):
+                    if offset_y == 0 and offset_x == 0:
+                        continue
+                    next_y = current_y + offset_y
+                    next_x = current_x + offset_x
+                    if (
+                        0 <= next_y < mask.shape[0]
+                        and 0 <= next_x < mask.shape[1]
+                        and mask[next_y, next_x]
+                        and not visited[next_y, next_x]
+                    ):
+                        visited[next_y, next_x] = True
+                        stack.append((next_y, next_x))
+
+        if len(component) > len(best_pixels):
+            best_pixels = component
+            best_bounds = (min_x, min_y, max_x + 1, max_y + 1)
+
+    if not best_pixels:
+        raise ValueError("Draw a digit before predicting.")
+
+    cleaned = np.zeros_like(image)
+    for pixel_y, pixel_x in best_pixels:
+        cleaned[pixel_y, pixel_x] = image[pixel_y, pixel_x]
+    return cleaned, best_bounds
+
+
+def _resize_area_average(
+    image: np.ndarray,
+    target_height: int,
+    target_width: int,
+) -> np.ndarray:
+    """Resize by averaging the source area covered by each target pixel.
+
+    A point-sampled resize can miss a thin stroke completely when a 128x128
+    drawing is reduced to 8x8. Area averaging preserves the ink coverage, so
+    a thick hand-drawn line becomes a continuous grayscale digit instead of a
+    few isolated dark cells.
+    """
+    source_height, source_width = image.shape
+    result = np.zeros((target_height, target_width), dtype=float)
+    y_scale = source_height / target_height
+    x_scale = source_width / target_width
+
+    for target_y in range(target_height):
+        source_y_start = target_y * y_scale
+        source_y_end = (target_y + 1) * y_scale
+        first_source_y = int(np.floor(source_y_start))
+        last_source_y = int(np.ceil(source_y_end))
+        for target_x in range(target_width):
+            source_x_start = target_x * x_scale
+            source_x_end = (target_x + 1) * x_scale
+            first_source_x = int(np.floor(source_x_start))
+            last_source_x = int(np.ceil(source_x_end))
+            total = 0.0
+            covered_area = 0.0
+            for source_y in range(first_source_y, last_source_y):
+                y_overlap = min(source_y_end, source_y + 1) - max(source_y_start, source_y)
+                if y_overlap <= 0:
+                    continue
+                for source_x in range(first_source_x, last_source_x):
+                    x_overlap = min(source_x_end, source_x + 1) - max(source_x_start, source_x)
+                    if x_overlap <= 0:
+                        continue
+                    area = y_overlap * x_overlap
+                    total += float(image[source_y, source_x]) * area
+                    covered_area += area
+            result[target_y, target_x] = total / covered_area if covered_area else 0.0
+    return result
+
+
+def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+    values = np.asarray(drawing, dtype=float).reshape(-1)
+    if values.size != DRAWING_COUNT:
+        raise ValueError(f"Expected {DRAWING_COUNT} drawing values.")
+    if not np.isfinite(values).all() or np.any(values < 0) or np.any(values > 16):
+        raise ValueError("Drawing values must be finite and between 0 and 16.")
+
+    image = values.reshape(DRAWING_SIZE, DRAWING_SIZE)
+    maximum = float(image.max())
+    threshold = max(1.0, maximum * 0.08)
+    cleaned, (left, top, right, bottom) = _largest_component(image, threshold)
+    cropped = cleaned[top:bottom, left:right]
+    content_height, content_width = cropped.shape
+    # The crop is intentionally resized, not padded. Padding a portrait crop
+    # creates empty rows above and below, which is not the requested flow.
+    square_size = max(content_height, content_width)
+    square = _resize_area_average(cropped, square_size, square_size)
+    resized = _resize_area_average(square, PIXEL_SIZE, PIXEL_SIZE)
+    resized_maximum = float(resized.max())
+    if resized_maximum <= 0:
+        raise ValueError("The drawing does not contain a visible digit.")
+    normalized = np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)
+    normalized = np.rint(normalized).astype(int)
+    metadata = {
+        "source_size": [DRAWING_SIZE, DRAWING_SIZE],
+        "threshold": threshold,
+        "bounding_box": {
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        },
+        "cropped_size": [content_height, content_width],
+        "square_size": square_size,
+        "normalized_pixels": normalized.tolist(),
+    }
+    return normalized.reshape(-1).astype(float), metadata
+
+
+def _forward_model(
+    model: dict[str, Any],
+    normalized_features: np.ndarray,
+) -> dict[str, Any]:
+    current = normalized_features
+    trace_layers: list[dict[str, Any]] = []
+    for layer_index, layer in enumerate(model["layers"]):
+        weights = np.asarray(layer["weights"], dtype=float)
+        biases = np.asarray(layer["biases"], dtype=float)
+        z_values = current @ weights + biases
+        activation = layer.get("activation", "identity")
+        if activation == "softmax":
+            output_values = _softmax(z_values)
+        else:
+            output_values = _apply_activation(z_values, activation)
+        trace_layers.append(
+            {
+                "index": layer_index,
+                "name": layer.get("name", f"Layer {layer_index + 1}"),
+                "kind": layer.get("kind", "hidden"),
+                "activation": activation,
+                "z": z_values.tolist(),
+                "h": output_values.tolist(),
+                "neuron_count": int(output_values.size),
+            }
+        )
+        current = output_values
+
+    probabilities = current
+    return {
+        "id": model["id"],
+        "name": model["name"],
+        "kind": model["kind"],
+        "architecture": model["architecture"],
+        "activations": model["activations"],
+        "parameter_count": model["parameter_count"],
+        "test_accuracy": model["test_accuracy"],
+        "validation_accuracy": model.get("validation_accuracy"),
+        "predicted_class": int(np.argmax(probabilities)),
+        "confidence": float(np.max(probabilities)),
+        "probabilities": [float(value) for value in probabilities],
+        "layers": trace_layers,
+    }
+
+
+def _predict_features(
+    artifact: dict[str, Any],
+    features: np.ndarray,
+    sample_index: int | None = None,
+    preprocessing_info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    features = np.asarray(features, dtype=float).reshape(-1)
+    if features.size != PIXEL_COUNT:
+        raise ValueError(f"Expected {PIXEL_COUNT} pixel values.")
+    if not np.isfinite(features).all() or np.any(features < 0) or np.any(features > 16):
+        raise ValueError("Pixel values must be finite and between 0 and 16.")
+
+    dataset_features, dataset_labels = load_digits_dataset()
+    true_label: int | None = None
+    if sample_index is not None:
+        if sample_index < 0 or sample_index >= len(dataset_features):
+            raise ValueError("Sample index is outside the digits dataset.")
+        expected = dataset_features[sample_index]
+        if not np.allclose(expected, features):
+            raise ValueError("sample_index does not match the supplied pixels.")
+        true_label = int(dataset_labels[sample_index])
+
+    preprocessing = artifact["preprocessing"]
+    mean = _as_vector(preprocessing["mean"], PIXEL_COUNT, "preprocessing mean")
+    standard_deviation = _as_vector(
+        preprocessing["std"], PIXEL_COUNT, "preprocessing std"
+    )
+    normalized = (features - mean) / standard_deviation
+    model_results = [_forward_model(model, normalized) for model in artifact["models"]]
+    result = {
+        "pixels": features.reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist(),
+        "features_normalized": [float(value) for value in normalized],
+        "sample_index": sample_index,
+        "true_label": true_label,
+        "models": model_results,
+    }
+    if preprocessing_info is not None:
+        result["preprocessing"] = preprocessing_info
+    return result
+
+
+def predict_digits(
+    artifact: dict[str, Any],
+    pixels: np.ndarray,
+    sample_index: int | None = None,
+) -> dict[str, Any]:
+    features = np.asarray(pixels, dtype=float).reshape(-1)
+    if features.size != PIXEL_COUNT:
+        raise ValueError(f"Expected {PIXEL_COUNT} pixel values.")
+    return _predict_features(artifact, features, sample_index)
+
+
+def predict_drawing(artifact: dict[str, Any], drawing: np.ndarray) -> dict[str, Any]:
+    normalized_pixels, preprocessing_info = preprocess_drawing(drawing)
+    return _predict_features(artifact, normalized_pixels, preprocessing_info=preprocessing_info)
