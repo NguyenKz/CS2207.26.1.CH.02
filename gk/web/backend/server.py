@@ -12,6 +12,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
+from starlette.websockets import WebSocketDisconnected, WebSocketState
 
 from .ann_core import (
     CLASS_COUNT,
@@ -86,6 +87,20 @@ class TrainConfig(BaseModel):
 
 def validation_error_message(error: Exception) -> str:
     return f"Invalid training configuration: {error}"
+
+
+_WS_CLOSED = (WebSocketDisconnect, WebSocketDisconnected)
+
+
+async def _ws_send_json(websocket: WebSocket, payload: dict[str, Any]) -> bool:
+    """Send JSON if the client is still connected; return False on disconnect/reset."""
+    if websocket.client_state != WebSocketState.CONNECTED:
+        return False
+    try:
+        await websocket.send_json(payload)
+        return True
+    except _WS_CLOSED:
+        return False
 
 
 async def train_activation(
@@ -192,7 +207,8 @@ async def stream_training(
     )
     event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-    await websocket.send_json(
+    if not await _ws_send_json(
+        websocket,
         {
             "type": "run_started",
             "run_id": run_id,
@@ -217,8 +233,9 @@ async def stream_training(
                 "testing": list(data.testing_features.shape),
                 "holdout": list(data.holdout_features.shape),
             },
-        }
-    )
+        },
+    ):
+        return
 
     workers = [
         asyncio.create_task(
@@ -256,19 +273,25 @@ async def stream_training(
                 worker.cancel()
             raise RuntimeError(event["error"])
         else:
-            await websocket.send_json({"run_id": run_id, **event})
+            if not await _ws_send_json(websocket, {"run_id": run_id, **event}):
+                cancel_event.set()
+                for worker in workers:
+                    worker.cancel()
+                await asyncio.gather(*completion_tasks, return_exceptions=True)
+                return
 
     await asyncio.gather(*completion_tasks)
     duration_ms = round((time.perf_counter() - started_at) * 1000)
     status = "cancelled" if cancel_event.is_set() else "completed"
-    await websocket.send_json(
+    await _ws_send_json(
+        websocket,
         {
             "type": "run_cancelled" if cancel_event.is_set() else "run_completed",
             "run_id": run_id,
             "status": status,
             "duration_ms": duration_ms,
             "results": sorted(results, key=lambda result: result["activation"]),
-        }
+        },
     )
 
 
@@ -597,28 +620,30 @@ async def training_websocket(websocket: WebSocket) -> None:
             if receive_task in done:
                 try:
                     message = receive_task.result()
-                except WebSocketDisconnect:
+                except _WS_CLOSED:
                     break
                 receive_task = asyncio.create_task(websocket.receive_json())
                 message_type = message.get("type")
 
                 if message_type == "start":
                     if training_task is not None and not training_task.done():
-                        await websocket.send_json(
+                        await _ws_send_json(
+                            websocket,
                             {
                                 "type": "error",
                                 "message": "A training run is already active.",
-                            }
+                            },
                         )
                         continue
                     try:
                         config = TrainConfig(**message.get("config", {}))
                     except Exception as error:
-                        await websocket.send_json(
+                        await _ws_send_json(
+                            websocket,
                             {
                                 "type": "error",
                                 "message": validation_error_message(error),
-                            }
+                            },
                         )
                         continue
                     cancel_event = asyncio.Event()
@@ -627,19 +652,24 @@ async def training_websocket(websocket: WebSocket) -> None:
                     )
                 elif message_type == "cancel" and cancel_event is not None:
                     cancel_event.set()
-                elif message_type == "reset" and cancel_event is not None:
-                    cancel_event.set()
+                elif message_type == "reset":
+                    if cancel_event is not None:
+                        cancel_event.set()
+                    if training_task is not None and not training_task.done():
+                        training_task.cancel()
 
             if training_task is not None and training_task in done:
                 try:
                     await training_task
+                except (asyncio.CancelledError, *_WS_CLOSED):
+                    pass
                 except Exception as error:
-                    await websocket.send_json(
-                        {"type": "error", "message": str(error)}
+                    await _ws_send_json(
+                        websocket, {"type": "error", "message": str(error)}
                     )
                 training_task = None
                 cancel_event = None
-    except WebSocketDisconnect:
+    except _WS_CLOSED:
         pass
     finally:
         if cancel_event is not None:
