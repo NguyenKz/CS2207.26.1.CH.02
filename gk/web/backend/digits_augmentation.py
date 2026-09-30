@@ -38,8 +38,47 @@ def _scale_about_center(image: np.ndarray, scale: float) -> np.ndarray:
     return result
 
 
+def _rotate_about_center(image: np.ndarray, degrees: float) -> np.ndarray:
+    """Rotate around center with nearest-neighbor sampling (no SciPy)."""
+    if abs(degrees) < 1e-6:
+        return image
+    size = image.shape[0]
+    center = (size - 1) / 2.0
+    theta = np.deg2rad(degrees)
+    cos_t, sin_t = float(np.cos(theta)), float(np.sin(theta))
+    yy, xx = np.indices(image.shape)
+    x = xx - center
+    y = yy - center
+    src_x = np.rint(cos_t * x + sin_t * y + center).astype(int)
+    src_y = np.rint(-sin_t * x + cos_t * y + center).astype(int)
+    result = np.zeros_like(image)
+    valid = (src_x >= 0) & (src_x < size) & (src_y >= 0) & (src_y < size)
+    result[valid] = image[src_y[valid], src_x[valid]]
+    return result
+
+
+def _box_blur3(image: np.ndarray) -> np.ndarray:
+    """3×3 mean filter via padded sums."""
+    size = image.shape[0]
+    padded = np.pad(image.astype(float), 1, mode="edge")
+    blurred = np.zeros_like(image, dtype=float)
+    for dy in range(3):
+        for dx in range(3):
+            blurred += padded[dy:dy + size, dx:dx + size]
+    return blurred / 9.0
+
+
+def _sharpen(image: np.ndarray, amount: float = 1.0) -> np.ndarray:
+    """Unsharp mask: emphasize ink edges after soft blur."""
+    maximum = float(image.max())
+    if maximum <= 0 or amount <= 0:
+        return image
+    sharpened = image.astype(float) + amount * (image.astype(float) - _box_blur3(image))
+    return np.clip(sharpened, 0.0, maximum)
+
+
 def _change_stroke(image: np.ndarray, mode: str) -> np.ndarray:
-    """Make the binary ink mildly thicker or thinner without changing labels."""
+    """Make the binary ink thicker or thinner without changing labels."""
     mask = image >= max(8.0, float(image.max()) * 0.25)
     if mode == "thick":
         result = image.copy()
@@ -97,23 +136,34 @@ def _variant(
     shift_pixels: int,
     scale_range: tuple[float, float],
     stroke_variants: bool,
+    rotate_degrees: float,
+    sharpen: bool,
 ) -> np.ndarray:
     rng = np.random.default_rng(seed + index * 7919)
     dx, dy = rng.integers(-shift_pixels, shift_pixels + 1, size=2)
     scale = float(rng.uniform(*scale_range))
     transformed = _scale_about_center(_shift(image, int(dx), int(dy)), scale)
+    if rotate_degrees > 0:
+        angle = float(rng.uniform(-rotate_degrees, rotate_degrees))
+        transformed = _rotate_about_center(transformed, angle)
     if stroke_variants:
-        transformed = _change_stroke(transformed, "thick" if index % 2 else "thin")
+        # Cycle thick / thin / keep so canvas-like fat strokes appear often.
+        stroke_mode = ("thick", "thin", "thick")[index % 3]
+        transformed = _change_stroke(transformed, stroke_mode)
+    if sharpen and rng.random() < 0.5:
+        transformed = _sharpen(transformed, amount=float(rng.uniform(0.6, 1.4)))
     return transformed
 
 
 def build_augmented_variants(
     raw_images: np.ndarray,
     *,
-    factor: int = 3,
-    shift_pixels: int = 2,
+    factor: int = 5,
+    shift_pixels: int = 3,
     stroke_variants: bool = True,
-    scale_range: tuple[float, float] = (0.90, 1.10),
+    scale_range: tuple[float, float] = (0.85, 1.15),
+    rotate_degrees: float = 15.0,
+    sharpen: bool = True,
     seed: int = 42,
 ) -> np.ndarray:
     """Return normalized variants only; callers keep original train samples separately."""
@@ -124,6 +174,8 @@ def build_augmented_variants(
         raise ValueError("Augmentation factor must be at least 1.")
     if shift_pixels < 0 or scale_range[0] <= 0 or scale_range[0] > scale_range[1]:
         raise ValueError("Invalid augmentation shift or scale range.")
+    if rotate_degrees < 0:
+        raise ValueError("rotate_degrees must be non-negative.")
     if factor == 1 or len(images) == 0:
         return np.empty((0, PIXEL_COUNT), dtype=np.float32)
 
@@ -139,6 +191,8 @@ def build_augmented_variants(
                 shift_pixels,
                 scale_range,
                 stroke_variants,
+                rotate_degrees,
+                sharpen,
             )
             normalized[output_index] = _normalize_variant(augmented, int(np.sqrt(PIXEL_COUNT)))
             output_index += 1
@@ -151,3 +205,19 @@ def repeat_labels(labels: np.ndarray, factor: int) -> np.ndarray:
     if factor < 1:
         raise ValueError("Augmentation factor must be at least 1.")
     return np.concatenate((values, np.repeat(values, factor - 1)))
+
+
+if __name__ == "__main__":
+    digit = np.zeros((28, 28), dtype=float)
+    digit[6:22, 10:18] = 200
+    rotated = _rotate_about_center(digit, 12)
+    sharpened = _sharpen(digit, 1.0)
+    thick = _change_stroke(digit, "thick")
+    assert rotated.sum() > 0 and not np.allclose(rotated, digit)
+    assert sharpened.max() >= digit.max() * 0.9
+    assert (thick > 0).sum() > (digit > 0).sum()
+    batch = np.stack([digit, digit])
+    variants = build_augmented_variants(batch, factor=3, seed=0)
+    assert variants.shape == (4, PIXEL_COUNT)
+    assert np.all((variants >= 0) & (variants <= 16))
+    print("ok", variants.shape, float(variants.mean()))

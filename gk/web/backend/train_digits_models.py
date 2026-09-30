@@ -33,7 +33,9 @@ from .digits_models import (
 )
 from .model_config import (
     AUGMENT_FACTOR,
+    AUGMENT_ROTATE_DEGREES,
     AUGMENT_SCALE_RANGE,
+    AUGMENT_SHARPEN,
     AUGMENT_SHIFT_PIXELS,
     AUGMENT_STROKE_VARIANTS,
     AUGMENT_TRAINING,
@@ -89,6 +91,8 @@ def main() -> None:
             shift_pixels=AUGMENT_SHIFT_PIXELS,
             stroke_variants=AUGMENT_STROKE_VARIANTS,
             scale_range=AUGMENT_SCALE_RANGE,
+            rotate_degrees=AUGMENT_ROTATE_DEGREES,
+            sharpen=AUGMENT_SHARPEN,
             seed=RANDOM_SEED,
         )
         training_features = np.vstack((original_training_features, augmented_features))
@@ -238,6 +242,8 @@ def main() -> None:
             "shift_pixels": AUGMENT_SHIFT_PIXELS,
             "stroke_variants": AUGMENT_STROKE_VARIANTS,
             "scale_range": list(AUGMENT_SCALE_RANGE),
+            "rotate_degrees": AUGMENT_ROTATE_DEGREES,
+            "sharpen": AUGMENT_SHARPEN,
             "applied_to": "fit split only; validation and test remain unchanged",
         },
         "baseline_tuning": {
