@@ -144,9 +144,11 @@ const NormalizedPreview = memo(function NormalizedPreview({
 const FreehandCanvas = memo(function FreehandCanvas({
   drawing,
   onCommit,
+  downloadName,
 }: {
   drawing: number[];
   onCommit: (drawing: number[]) => void;
+  downloadName: string;
 }): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(drawing);
@@ -194,7 +196,8 @@ const FreehandCanvas = memo(function FreehandCanvas({
     const point = getPoint(event);
     const previous = lastPointRef.current ?? point;
     context.strokeStyle = "#fbfaf6";
-    context.lineWidth = 11;
+    // Match MNIST stroke mass after 16×16 resize; width 11 made clean 9s look like 3/5.
+    context.lineWidth = 5;
     context.lineCap = "round";
     context.lineJoin = "round";
     context.beginPath();
@@ -227,27 +230,50 @@ const FreehandCanvas = memo(function FreehandCanvas({
     onCommit(nextDrawing);
   }
 
+  function saveDrawing(): void {
+    const canvas = canvasRef.current;
+    if (!canvas || drawing.every((value) => value === 0)) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${downloadName}-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }, "image/png");
+  }
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="predict-drawing-canvas"
-      width={DRAWING_SIZE}
-      height={DRAWING_SIZE}
-      role="img"
-      aria-label="Freehand digit drawing canvas"
-      tabIndex={0}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        drawingActiveRef.current = true;
-        drawStroke(event);
-      }}
-      onPointerMove={(event) => {
-        if (drawingActiveRef.current) drawStroke(event);
-      }}
-      onPointerUp={finishStroke}
-      onPointerCancel={finishStroke}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="predict-drawing-canvas"
+        width={DRAWING_SIZE}
+        height={DRAWING_SIZE}
+        role="img"
+        aria-label="Freehand digit drawing canvas"
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drawingActiveRef.current = true;
+          drawStroke(event);
+        }}
+        onPointerMove={(event) => {
+          if (drawingActiveRef.current) drawStroke(event);
+        }}
+        onPointerUp={finishStroke}
+        onPointerCancel={finishStroke}
+      />
+      <div className="predict-canvas-actions">
+        <button className="button button-quiet" type="button" onClick={saveDrawing} disabled={drawing.every((value) => value === 0)}>
+          Lưu ảnh vẽ (PNG)
+        </button>
+      </div>
+    </>
   );
 });
 
@@ -544,6 +570,7 @@ export function PredictPanel(): ReactElement {
   }
 
   const displayLabel = sampleLabel == null ? "Custom drawing" : `True label · ${sampleLabel}`;
+  const drawingFileName = `digit-${sampleLabel == null ? "custom" : `sample-${sampleIndex ?? "unknown"}-label-${sampleLabel}`}-${selectedModelResult ? `${selectedModelId}-predicted-${selectedModelResult.predicted_class}` : "unpredicted"}`;
 
   return (
     <div className="predict-shell">
@@ -588,7 +615,7 @@ export function PredictPanel(): ReactElement {
                 <p>{displayLabel}</p>
               </div>
               <div className="predict-pixel-frame">
-                <FreehandCanvas drawing={drawing} onCommit={commitDrawing} />
+                <FreehandCanvas drawing={drawing} onCommit={commitDrawing} downloadName={drawingFileName} />
                 <div className="predict-pixel-scale"><span>freehand</span><span>128×128 canvas</span><span>ink</span></div>
                 <NormalizedPreview pixels={normalizedPixels} pixelSize={pixelSize} />
                 {result?.preprocessing && (

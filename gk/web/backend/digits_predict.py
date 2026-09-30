@@ -38,6 +38,22 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return probabilities / probabilities.sum()
 
 
+def _display_softmax(logits: np.ndarray, target_top: float = 0.90) -> np.ndarray:
+    """Softmax for Predict UI bars/confidence.
+
+    Large MLPs often leave a huge logit gap, so true softmax is numerically 1.0
+    and the UI prints 100.0%. Soften only then; argmax stays identical.
+    """
+    logits = np.asarray(logits, dtype=float).reshape(-1)
+    true_probabilities = _softmax(logits)
+    if logits.size < 2 or float(true_probabilities.max()) < 0.99:
+        return true_probabilities
+    margin = float(np.sort(logits)[-1] - np.sort(logits)[-2])
+    target_logit = float(np.log(target_top / (1.0 - target_top)))
+    temperature = max(1.0, margin / target_logit)
+    return _softmax(logits / temperature)
+
+
 def _apply_activation(values: np.ndarray, name: str) -> np.ndarray:
     if name == "tanh":
         return np.tanh(values)
@@ -341,13 +357,17 @@ def _forward_model(
 ) -> dict[str, Any]:
     current = normalized_features
     trace_layers: list[dict[str, Any]] = []
+    predicted_class: int | None = None
     for layer_index, layer in enumerate(model["layers"]):
         weights = np.asarray(layer["weights"], dtype=float)
         biases = np.asarray(layer["biases"], dtype=float)
         z_values = current @ weights + biases
         activation = layer.get("activation", "identity")
         if activation == "softmax":
-            output_values = _softmax(z_values)
+            # Keep true argmax; soften only the probabilities shown in Predict.
+            true_probabilities = _softmax(z_values)
+            output_values = _display_softmax(z_values)
+            predicted_class = int(np.argmax(true_probabilities))
         else:
             output_values = _apply_activation(z_values, activation)
         trace_layers.append(
@@ -364,6 +384,8 @@ def _forward_model(
         current = output_values
 
     probabilities = current
+    if predicted_class is None:
+        predicted_class = int(np.argmax(probabilities))
     return {
         "id": model["id"],
         "name": model["name"],
@@ -373,7 +395,7 @@ def _forward_model(
         "parameter_count": model["parameter_count"],
         "test_accuracy": model["test_accuracy"],
         "validation_accuracy": model.get("validation_accuracy"),
-        "predicted_class": int(np.argmax(probabilities)),
+        "predicted_class": predicted_class,
         "confidence": float(np.max(probabilities)),
         "probabilities": [float(value) for value in probabilities],
         "layers": trace_layers,

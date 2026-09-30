@@ -101,6 +101,16 @@
   outline-offset: 3px;
 }
 
+.predict-canvas-actions {
+  display: flex;
+  margin-top: 8px;
+}
+
+.predict-canvas-actions .button {
+  width: 100%;
+  min-height: 44px;
+}
+
 .predict-pixel-scale {
   display: flex;
   justify-content: space-between;
