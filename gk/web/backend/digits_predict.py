@@ -286,7 +286,8 @@ def preprocess_dataset_pixels(pixels: np.ndarray) -> np.ndarray:
         if side * side != values.size:
             raise ValueError("The source image must be a square grayscale image.")
         values = values.reshape(side, side)
-    return _normalize_source_image(values).reshape(-1)
+    normalized, _ = _normalize_source_image(values)
+    return normalized.reshape(-1)
 
 
 def _center_in_square(cropped: np.ndarray) -> np.ndarray:
@@ -300,7 +301,7 @@ def _center_in_square(cropped: np.ndarray) -> np.ndarray:
     return square
 
 
-def _normalize_source_image(image: np.ndarray) -> np.ndarray:
+def _normalize_source_image(image: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
     """Binarize, denoise, crop, center in a square, then resize to N×N."""
     image = np.asarray(image, dtype=float)
     if image.ndim != 2 or not np.isfinite(image).all() or np.any(image < 0):
@@ -312,12 +313,26 @@ def _normalize_source_image(image: np.ndarray) -> np.ndarray:
     binary = np.where(image >= threshold, maximum, 0.0)
     cleaned, (left, top, right, bottom) = _largest_component(binary, threshold)
     cropped = cleaned[top:bottom, left:right]
+    content_height, content_width = cropped.shape
     square = _center_in_square(cropped)
     resized = _resize_area_average(square, PIXEL_SIZE, PIXEL_SIZE)
     resized_maximum = float(resized.max())
     if resized_maximum <= 0:
         raise ValueError("The source image does not contain a visible digit.")
-    return np.rint(np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)).astype(float)
+    normalized = np.rint(np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)).astype(float)
+    info = {
+        "threshold": threshold,
+        "bounding_box": {
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        },
+        "cropped_size": [content_height, content_width],
+        "square_size": int(square.shape[0]),
+        "normalized_pixels": normalized.astype(int).tolist(),
+    }
+    return normalized, info
 
 
 def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
@@ -328,25 +343,10 @@ def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]
         raise ValueError("Drawing values must be finite and between 0 and 16.")
 
     image = values.reshape(DRAWING_SIZE, DRAWING_SIZE)
-    maximum = float(image.max())
-    threshold = max(1.0, maximum * 0.5)
-    cleaned, (left, top, right, bottom) = _largest_component(image, threshold)
-    cropped = cleaned[top:bottom, left:right]
-    content_height, content_width = cropped.shape
-    normalized = _normalize_source_image(image).astype(int)
-    square_size = max(content_height, content_width)
+    normalized, info = _normalize_source_image(image)
     metadata = {
         "source_size": [DRAWING_SIZE, DRAWING_SIZE],
-        "threshold": threshold,
-        "bounding_box": {
-            "x": left,
-            "y": top,
-            "width": right - left,
-            "height": bottom - top,
-        },
-        "cropped_size": [content_height, content_width],
-        "square_size": square_size,
-        "normalized_pixels": normalized.tolist(),
+        **info,
     }
     return normalized.reshape(-1).astype(float), metadata
 
@@ -358,16 +358,17 @@ def _forward_model(
     current = normalized_features
     trace_layers: list[dict[str, Any]] = []
     predicted_class: int | None = None
+    display_probabilities: np.ndarray | None = None
     for layer_index, layer in enumerate(model["layers"]):
         weights = np.asarray(layer["weights"], dtype=float)
         biases = np.asarray(layer["biases"], dtype=float)
         z_values = current @ weights + biases
         activation = layer.get("activation", "identity")
         if activation == "softmax":
-            # Keep true argmax; soften only the probabilities shown in Predict.
             true_probabilities = _softmax(z_values)
-            output_values = _display_softmax(z_values)
+            output_values = true_probabilities
             predicted_class = int(np.argmax(true_probabilities))
+            display_probabilities = _display_softmax(z_values)
         else:
             output_values = _apply_activation(z_values, activation)
         trace_layers.append(
@@ -383,9 +384,10 @@ def _forward_model(
         )
         current = output_values
 
-    probabilities = current
+    if display_probabilities is None:
+        display_probabilities = current
     if predicted_class is None:
-        predicted_class = int(np.argmax(probabilities))
+        predicted_class = int(np.argmax(current))
     return {
         "id": model["id"],
         "name": model["name"],
@@ -396,8 +398,8 @@ def _forward_model(
         "test_accuracy": model["test_accuracy"],
         "validation_accuracy": model.get("validation_accuracy"),
         "predicted_class": predicted_class,
-        "confidence": float(np.max(probabilities)),
-        "probabilities": [float(value) for value in probabilities],
+        "confidence": float(np.max(display_probabilities)),
+        "probabilities": [float(value) for value in display_probabilities],
         "layers": trace_layers,
     }
 

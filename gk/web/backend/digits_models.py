@@ -7,8 +7,9 @@ from typing import Any
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 import numpy as np
-from .digits_config import PIXEL_COUNT
+from .digits_config import EARLY_STOPPING, MAX_ITER, PIXEL_COUNT
 from .model_config import (
+    BATCH_SIZE,
     CLASS_COUNT,
     LOGISTIC_CANDIDATES,
     MLP_SEARCH_CONFIGS,
@@ -108,17 +109,9 @@ def build_mlp(
     batch_size: int | None = None,
     verbose: bool = False,
 ) -> MLPClassifier:
-    configured_max_iter = MODEL_CONFIGS['compact_tuned']['max_iter'] if max_iter is None else max_iter
-    configured_early_stopping = (
-        MODEL_CONFIGS['compact_tuned']['early_stopping']
-        if early_stopping is None
-        else early_stopping
-    )
-    configured_batch_size = (
-        MODEL_CONFIGS['compact_tuned'].get('batch_size', 64)
-        if batch_size is None
-        else batch_size
-    )
+    configured_max_iter = MAX_ITER if max_iter is None else max_iter
+    configured_early_stopping = EARLY_STOPPING if early_stopping is None else early_stopping
+    configured_batch_size = BATCH_SIZE if batch_size is None else batch_size
     return MLPClassifier(
         hidden_layer_sizes=hidden_layers,
         activation=activation,

@@ -43,9 +43,13 @@ def _change_stroke(image: np.ndarray, mode: str) -> np.ndarray:
     mask = image >= max(8.0, float(image.max()) * 0.25)
     if mode == "thick":
         result = image.copy()
-        for dy in (-1, 0, 1):
-            for dx in (-1, 0, 1):
-                result = np.maximum(result, _shift(image, dx, dy))
+        # Two dilate passes so augmented strokes closer match freehand canvas mass.
+        for _ in range(2):
+            dilated = result.copy()
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    dilated = np.maximum(dilated, _shift(result, dx, dy))
+            result = dilated
         return result
     if mode == "thin":
         neighbors = np.zeros(mask.shape, dtype=np.int16)

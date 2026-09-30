@@ -98,7 +98,7 @@ MODEL_CONFIGS = {
         "kind": "ann",
         "layers": [
             {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 2, "activation": "tanh"},
-            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "relu"},
+            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "tanh"},
             {"input": PIXEL_COUNT // 4, "output": CLASS_COUNT, "activation": "softmax"},
         ],
         "learning_rate_init": 0.002,
@@ -110,7 +110,7 @@ MODEL_CONFIGS = {
         "kind": "ann",
         "layers": [
             {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 2, "activation": "relu"},
-            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "tanh"},
+            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "relu"},
             {"input": PIXEL_COUNT // 4, "output": CLASS_COUNT, "activation": "softmax"},
         ],
         "learning_rate_init": 0.002,
@@ -132,4 +132,6 @@ if __name__ == "__main__":
         if config["kind"] == "ann":
             assert hidden_layer_sizes(config)
             assert hidden_activation(config) is not None
+            hidden_acts = [layer["activation"] for layer in layers[:-1]]
+            assert len(set(hidden_acts)) == 1, name
     print("ok", {name: architecture_sizes(cfg) for name, cfg in MODEL_CONFIGS.items()})
