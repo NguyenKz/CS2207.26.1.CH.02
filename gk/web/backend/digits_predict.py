@@ -9,10 +9,20 @@ from typing import Any
 
 import numpy as np
 
+from .digits_config import (
+    LEGACY_MODEL_ARTIFACT_PATH,
+    MODEL_ARTIFACT_PATH,
+    PIXEL_COUNT,
+    PIXEL_SIZE,
+)
 
-ARTIFACT_PATH = Path(__file__).with_name("artifacts") / "digits_models.json"
-PIXEL_SIZE = 8
-PIXEL_COUNT = PIXEL_SIZE * PIXEL_SIZE
+ARTIFACT_PATH = (
+    MODEL_ARTIFACT_PATH
+    if MODEL_ARTIFACT_PATH.exists()
+    else LEGACY_MODEL_ARTIFACT_PATH
+    if PIXEL_SIZE == 8
+    else MODEL_ARTIFACT_PATH
+)
 CLASS_COUNT = 10
 DRAWING_SIZE = 128
 DRAWING_COUNT = DRAWING_SIZE * DRAWING_SIZE
@@ -61,18 +71,31 @@ def _as_vector(values: Any, size: int, label: str) -> np.ndarray:
 def load_digits_artifact() -> dict[str, Any]:
     if not ARTIFACT_PATH.exists():
         raise DigitsArtifactError(
-            "Digits model artifact is missing. Run "
-            "python -m gk.web.backend.train_digits_models first."
+            f"Digits model artifact for {PIXEL_SIZE}x{PIXEL_SIZE} is missing. "
+            "Run mnist_dataset.ipynb and mnist_train.ipynb with the current "
+            "ANN_DIGIT_SIZE, then restart the backend."
         )
     try:
         artifact = json.loads(ARTIFACT_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise DigitsArtifactError(f"Could not read digits artifact: {error}") from error
 
-    if artifact.get("version") not in (1, 2, 3):
+    if artifact.get("version") not in (3, 4):
         raise DigitsArtifactError("Unsupported digits artifact version.")
+    if artifact.get("version") != 4 and PIXEL_SIZE != 8:
+        raise DigitsArtifactError("Legacy digits artifacts are supported only for 8x8.")
     if len(artifact.get("models", [])) != 4:
         raise DigitsArtifactError("Digits artifact must contain exactly four models.")
+    dataset = artifact.get("dataset", {})
+    if dataset.get("input_shape") != [PIXEL_SIZE, PIXEL_SIZE]:
+        raise DigitsArtifactError(
+            f"Artifact input shape does not match configured {PIXEL_SIZE}x{PIXEL_SIZE}. "
+            "Regenerate the dataset and model artifact with ANN_DIGIT_SIZE."
+        )
+    if dataset.get("feature_count") != PIXEL_COUNT:
+        raise DigitsArtifactError(
+            f"Artifact feature count does not match configured {PIXEL_COUNT} features."
+        )
     preprocessing = artifact.get("preprocessing", {})
     _as_vector(preprocessing.get("mean"), PIXEL_COUNT, "preprocessing mean")
     standard_deviation = _as_vector(
@@ -80,13 +103,14 @@ def load_digits_artifact() -> dict[str, Any]:
     )
     if np.any(standard_deviation <= 0):
         raise DigitsArtifactError("Preprocessing standard deviations must be positive.")
-    if artifact.get("version") >= 3:
-        samples = np.asarray(artifact.get("test_samples"), dtype=float)
-        labels = np.asarray(artifact.get("test_labels"), dtype=int)
-        if samples.ndim != 2 or samples.shape[1] != PIXEL_COUNT:
-            raise DigitsArtifactError("MNIST test samples must have shape (n, 64).")
-        if labels.shape != (samples.shape[0],):
-            raise DigitsArtifactError("MNIST test labels do not match test samples.")
+    samples = np.asarray(artifact.get("test_samples"), dtype=float)
+    labels = np.asarray(artifact.get("test_labels"), dtype=int)
+    if samples.ndim != 2 or samples.shape[1] != PIXEL_COUNT:
+        raise DigitsArtifactError(
+            f"MNIST test samples must have shape (n, {PIXEL_COUNT})."
+        )
+    if labels.shape != (samples.shape[0],):
+        raise DigitsArtifactError("MNIST test labels do not match test samples.")
 
     for model in artifact["models"]:
         if not model.get("id") or not model.get("layers"):
@@ -212,7 +236,7 @@ def _resize_area_average(
     """Resize by averaging the source area covered by each target pixel.
 
     A point-sampled resize can miss a thin stroke completely when a 128x128
-    drawing is reduced to 8x8. Area averaging preserves the ink coverage, so
+    drawing is reduced to the configured N×N grid. Area averaging preserves the ink coverage, so
     a thick hand-drawn line becomes a continuous grayscale digit instead of a
     few isolated dark cells.
     """
@@ -261,7 +285,7 @@ def _center_in_square(cropped: np.ndarray) -> np.ndarray:
 
 
 def _normalize_source_image(image: np.ndarray) -> np.ndarray:
-    """Binarize, denoise, crop, center in a square, then resize to 8x8."""
+    """Binarize, denoise, crop, center in a square, then resize to N×N."""
     image = np.asarray(image, dtype=float)
     if image.ndim != 2 or not np.isfinite(image).all() or np.any(image < 0):
         raise ValueError("The source image must be a finite non-negative grayscale matrix.")

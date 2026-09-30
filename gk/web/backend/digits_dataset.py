@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from .digits_predict import preprocess_dataset_pixels
+from .digits_config import PIXEL_SIZE
 
 
 MNIST_CACHE = Path('/tmp/ann-mnist')
@@ -59,8 +60,11 @@ def normalize_mnist_images(
     train_images: np.ndarray,
     test_images: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Apply the same crop-square-resize transform used by the freehand UI."""
-    print('Normalizing MNIST images with the same crop-square-resize pipeline as the UI...')
+    """Apply the same crop-square-resize-N transform used by the freehand UI."""
+    print(
+        f'Normalizing MNIST images with the same crop-square-resize-{PIXEL_SIZE}x{PIXEL_SIZE} '
+        'pipeline as the UI...'
+    )
     train_features = np.stack([preprocess_dataset_pixels(image) for image in train_images])
     test_features = np.stack([preprocess_dataset_pixels(image) for image in test_images])
     return train_features, test_features

@@ -78,18 +78,30 @@ Hoặc chạy cả backend và frontend bằng một lệnh:
 ./run.sh
 ```
 
-## Tab Predict với chữ số viết tay 8×8
+## Tab Predict với chữ số viết tay theo kích thước cấu hình
 
-Tab `Predict` dùng ảnh chữ số viết tay thật từ MNIST. Ảnh gốc 28×28 đi qua đúng pipeline của canvas: khử nhiễu theo 50% cường độ lớn nhất, giữ vùng nét lớn nhất, crop, vuông hóa, area-average resize về 8×8, rồi mới dùng `StandardScaler`. Bốn model được train offline trên cùng một split dữ liệu và cùng `StandardScaler`:
+Tab `Predict` dùng ảnh chữ số viết tay thật từ MNIST. Kích thước normalized lấy từ biến `ANN_DIGIT_SIZE` trong `.env`, nhận `8`, `16` hoặc `24`, mặc định là `8`. Ảnh gốc 28×28 đi qua đúng pipeline của canvas: khử nhiễu theo 50% cường độ lớn nhất, giữ vùng nét lớn nhất, crop, vuông hóa, area-average resize về kích thước cấu hình, rồi mới dùng `StandardScaler`. Bốn model được train offline trên cùng một split dữ liệu và cùng `StandardScaler`:
 
-- `Logistic Regression`: baseline tuyến tính chính thức từ scikit-learn, `64 → 10`; tham số regularization `C` được chọn bằng validation.
-- MLP một hidden layer: `64 → 4 → 10`.
-- MLP hai hidden layer: `64 → 4 → 4 → 10`.
-- Compact tuned MLP: cấu hình được chọn qua 30 vòng thử bằng validation accuracy.
+- `Logistic Regression`: baseline tuyến tính chính thức từ scikit-learn, `N*N → 10`.
+- MLP một hidden layer: `N*N → H → 10`, với `H = N//2` theo cấu hình mặc định.
+- MLP hai hidden layer: `N*N → H → H → 10`.
+- Compact tuned MLP: cấu hình nhiều hidden layer, được cố định trong `model_config.py`.
 
-MNIST đã có 60.000 ảnh viết tay thật nên không cần nhân bản nhân tạo trong lượt train này. Logistic Regression và ANN dùng cùng tập train, validation, test và được chọn cấu hình qua 30 vòng thử; chênh lệch vì vậy phản ánh năng lực mô hình thay vì khác biệt dataset. ANN dùng `Adam`, chạy đủ 350 epochs và không bật early stopping. Hai MLP 4 neuron được giữ nhỏ có chủ đích để minh họa underfitting. Mạng tuned dùng `ReLU` và cấu hình đủ năng lực để thể hiện ranh giới phi tuyến. Đây là so sánh trên MNIST đã đưa về 8×8, không phải tuyên bố rằng ANN luôn thắng Logistic Regression trên mọi dataset.
+Logistic Regression và ANN dùng cùng tập validation/test. Riêng tập train được augmentation thành ba phiên bản mỗi ảnh: ảnh gốc, ảnh dịch/co giãn nhẹ và ảnh thay đổi độ dày nét. Augmentation chỉ áp dụng cho `fit_indices`, không áp dụng cho validation hoặc test. Cấu hình augmentation nằm trong `model_config.py`; artifact lưu lại số mẫu thực tế đã dùng. Hai MLP minh họa được giữ nhỏ có chủ đích để minh họa underfitting. Mạng tuned dùng hai hidden layer lớn hơn để thể hiện năng lực phi tuyến.
 
-Artifact weight được lưu tại `gk/web/backend/artifacts/digits_models.json`. Khi chạy web, backend chỉ đọc artifact và thực hiện forward pass bằng NumPy. Không có quá trình train lại khi mở tab `Predict`.
+Artifact weight được lưu riêng theo kích thước tại `gk/web/backend/artifacts/digits_models_NxN.json`. Khi chạy web, backend chỉ đọc artifact tương ứng với `.env` và thực hiện forward pass bằng NumPy. Không có quá trình train lại khi mở tab `Predict`.
+
+Tạo file cấu hình local:
+
+```bash
+cp .env.example .env
+```
+
+Sau đó sửa, nếu cần:
+
+```env
+ANN_DIGIT_SIZE=8
+```
 
 Tạo lại artifact sau khi thay đổi script hoặc dependency:
 
@@ -98,29 +110,33 @@ source .venv/bin/activate
 python -m gk.web.backend.train_digits_models
 ```
 
-Lệnh trên tải bốn file MNIST vào cache `/tmp/ann-mnist`, tạo lại bộ train đã normalize và ghi weight cùng các mẫu test đã normalize vào artifact. Dữ liệu gốc không được commit vào repository.
+Lệnh trên đọc dataset đã chuẩn bị cho kích thước đang cấu hình và ghi weight vào artifact tương ứng. Nếu dataset chưa tồn tại, hãy chạy `mnist_dataset.ipynb` trước. Dữ liệu gốc không được commit vào repository.
 
 Phần train được tách thành ba file để dễ chỉnh trong notebook hoặc chạy trực tiếp:
 
 - [`digits_dataset.py`](./gk/web/backend/digits_dataset.py): tải MNIST, đọc IDX và normalize ảnh theo pipeline của UI.
-- [`digits_models.py`](./gk/web/backend/digits_models.py): cấu hình Logistic Regression, hai ANN minh họa, ANN tuned và 30 vòng tìm kiếm.
+- [`model_config.py`](./gk/web/backend/model_config.py): nguồn cấu hình duy nhất của Logistic Regression, hai ANN minh họa và ANN tuned.
+- [`digits_models.py`](./gk/web/backend/digits_models.py): factory scikit-learn, export layer và các helper dùng chung.
 - [`train_digits_models.py`](./gk/web/backend/train_digits_models.py): chia dữ liệu, fit scaler, train model, đánh giá và export artifact.
 
 Notebook tổng hợp nhanh: [`mnist_ann_training.ipynb`](./gk/mds/mnist_ann_training.ipynb).
 
 Ba notebook chuyên dụng nên chạy theo thứ tự:
 
-1. [`mnist_dataset.ipynb`](./gk/mds/mnist_dataset.ipynb): tạo thư mục `gk/web/backend/artifacts/mnist_dataset/` gồm ảnh raw 28×28, ảnh normalized 8×8, `dataset_meta.json` và `split.json`.
-2. [`mnist_train.ipynb`](./gk/mds/mnist_train.ipynb): đọc thư mục dataset, train và ghi `mnist_weights.json` cùng `digits_models.json`.
-3. [`mnist_test.ipynb`](./gk/mds/mnist_test.ipynb): đọc file weight, chọn index và kiểm tra mẫu qua bốn model.
+1. [`mnist_dataset.ipynb`](./gk/mds/mnist_dataset.ipynb): tạo `gk/web/backend/artifacts/mnist_dataset/NxN/` gồm ảnh raw 28×28, ảnh normalized theo kích thước cấu hình, `dataset_meta.json` và `split.json`.
+2. [`mnist_models.ipynb`](./gk/mds/mnist_models.ipynb): đọc, kiểm tra cấu hình cố định và ghi `mnist_model_config.json` vào thư mục kích thước hiện tại.
+3. [`mnist_train.ipynb`](./gk/mds/mnist_train.ipynb): đọc thư mục dataset, train và ghi `mnist_weights.json` cùng `digits_models_NxN.json`.
+4. [`mnist_test.ipynb`](./gk/mds/mnist_test.ipynb): đọc file weight, chọn index và kiểm tra mẫu qua bốn model.
 
-Notebook [`mnist_models.ipynb`](./gk/mds/mnist_models.ipynb) là bước tuning tùy chọn. Nếu chạy nó trước notebook train, file `mnist_model_config.json` sẽ được lưu trong cùng thư mục dataset. Notebook train đọc ảnh 8×8 local rồi flatten thành 64 feature ngay trước khi đưa vào model.
+Notebook train đọc ảnh `N×N` local rồi flatten thành `N*N` feature ngay trước khi đưa vào model. Đổi `ANN_DIGIT_SIZE` sẽ tạo hoặc sử dụng thư mục dataset và artifact riêng, không trộn weight giữa các kích thước.
+
+Muốn đổi kiến trúc, activation, learning rate, số vòng lặp hoặc augmentation, sửa [`model_config.py`](./gk/web/backend/model_config.py), chạy lại `mnist_models.ipynb`, rồi chạy `mnist_train.ipynb`. Các notebook sẽ hiển thị log loss, epoch, accuracy, confusion matrix và ghi artifact cho web; không cần chạy lệnh train bằng terminal.
 
 Trang Predict cho phép chọn mẫu trong test set hoặc vẽ tự do trên canvas. `test accuracy` là metric của toàn bộ test set; `predicted digit` và `confidence` là kết quả của mẫu đang hiển thị.
 
 Baseline dùng implementation chính thức [`sklearn.linear_model.LogisticRegression`](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html), cùng `StandardScaler`, train/test split và random seed với các model ANN. Dataset chữ số lấy từ [MNIST handwritten digit database](https://yann.lecun.com/exdb/mnist/). Accuracy hiển thị trong app được đo lại trên test set của project, không lấy từ trang tài liệu.
 
-Người dùng cũng có thể vẽ tự do trên canvas. Backend sẽ khử nhiễu, giữ vùng nét lớn nhất, crop, vuông hóa, resize về 8×8 rồi mới chuẩn hóa và predict. Preview `NORMALIZED INPUT · 8×8` là đúng ảnh cuối cùng được đưa vào model.
+Người dùng cũng có thể vẽ tự do trên canvas. Backend sẽ khử nhiễu, giữ vùng nét lớn nhất, crop, vuông hóa, resize về `N×N` rồi mới chuẩn hóa và predict. Preview `NORMALIZED INPUT · N×N` là đúng ảnh cuối cùng được đưa vào model.
 
 ## Lộ trình thực hiện
 

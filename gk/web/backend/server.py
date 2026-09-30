@@ -22,7 +22,9 @@ from .ann_core import (
     prepare_classification_data,
 )
 from .digits_predict import (
+    DRAWING_COUNT,
     DigitsArtifactError,
+    PIXEL_COUNT,
     get_test_indices,
     load_digits_artifact,
     predict_digits,
@@ -276,22 +278,28 @@ async def health() -> dict[str, str]:
 
 
 class PredictRequest(BaseModel):
-    pixels: list[float] | None = Field(default=None, min_length=64, max_length=64)
-    drawing: list[float] | None = Field(default=None, min_length=128 * 128, max_length=128 * 128)
+    pixels: list[float] | None = None
+    drawing: list[float] | None = None
     sample_index: int | None = Field(default=None, ge=0)
 
     @field_validator("pixels")
     @classmethod
     def validate_pixels(cls, value: list[float] | None) -> list[float] | None:
-        if value is not None and any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
-            raise ValueError("pixel values must be between 0 and 16")
+        if value is not None:
+            if len(value) != PIXEL_COUNT:
+                raise ValueError(f"pixels must contain exactly {PIXEL_COUNT} values")
+            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
+                raise ValueError("pixel values must be between 0 and 16")
         return value
 
     @field_validator("drawing")
     @classmethod
     def validate_drawing(cls, value: list[float] | None) -> list[float] | None:
-        if value is not None and any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
-            raise ValueError("drawing values must be finite and between 0 and 16")
+        if value is not None:
+            if len(value) != DRAWING_COUNT:
+                raise ValueError(f"drawing must contain exactly {DRAWING_COUNT} values")
+            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
+                raise ValueError("drawing values must be finite and between 0 and 16")
         return value
 
     @model_validator(mode="after")

@@ -1,8 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement } from "react";
 
 const API_BASE = "http://localhost:6788";
-const PIXEL_COUNT = 64;
-const PIXEL_SIZE = 8;
 const DRAWING_SIZE = 128;
 const DRAWING_COUNT = DRAWING_SIZE * DRAWING_SIZE;
 
@@ -90,19 +88,19 @@ function flattenPixels(pixels: number[][]): number[] {
   return pixels.flat().map((value) => Math.max(0, Math.min(16, Math.round(value))));
 }
 
-function defaultPixels(): number[] {
-  return Array.from({ length: PIXEL_COUNT }, () => 0);
+function defaultPixels(pixelSize: number): number[] {
+  return Array.from({ length: pixelSize * pixelSize }, () => 0);
 }
 
 function blankDrawing(): number[] {
   return Array.from({ length: DRAWING_COUNT }, () => 0);
 }
 
-function sampleToDrawing(pixels: number[]): number[] {
+function sampleToDrawing(pixels: number[], pixelSize: number): number[] {
   return Array.from({ length: DRAWING_COUNT }, (_, index) => {
-    const sourceY = Math.floor(index / DRAWING_SIZE) * PIXEL_SIZE / DRAWING_SIZE;
-    const sourceX = (index % DRAWING_SIZE) * PIXEL_SIZE / DRAWING_SIZE;
-    return pixels[Math.floor(sourceY) * PIXEL_SIZE + Math.floor(sourceX)] ?? 0;
+    const sourceY = Math.min(pixelSize - 1, Math.floor(Math.floor(index / DRAWING_SIZE) * pixelSize / DRAWING_SIZE));
+    const sourceX = Math.min(pixelSize - 1, Math.floor((index % DRAWING_SIZE) * pixelSize / DRAWING_SIZE));
+    return pixels[sourceY * pixelSize + sourceX] ?? 0;
   });
 }
 
@@ -113,17 +111,24 @@ function normalizedColor(value: number): string {
 
 const NormalizedPreview = memo(function NormalizedPreview({
   pixels,
+  pixelSize,
 }: {
   pixels: number[] | null;
+  pixelSize: number;
 }): ReactElement {
   return (
     <div className="predict-normalized-block">
       <div className="predict-normalized-heading">
-        <span className="section-kicker">NORMALIZED INPUT · 8×8</span>
+        <span className="section-kicker">NORMALIZED INPUT · {pixelSize}×{pixelSize}</span>
         <small>{pixels ? "sent to model" : "appears after Predict"}</small>
       </div>
-      <div className="predict-normalized-grid" role="img" aria-label="8 by 8 normalized digit input">
-        {(pixels ?? defaultPixels()).map((value, index) => (
+      <div
+        className="predict-normalized-grid"
+        role="img"
+        aria-label={`${pixelSize} by ${pixelSize} normalized digit input`}
+        style={{ gridTemplateColumns: `repeat(${pixelSize}, minmax(0, 1fr))` }}
+      >
+        {(pixels ?? defaultPixels(pixelSize)).map((value, index) => (
           <span
             className="predict-normalized-cell"
             key={index}
@@ -345,26 +350,26 @@ function ActivationStrip({ layer }: { layer: LayerTrace }): ReactElement {
   );
 }
 
-function ForwardFlow({ model, customDrawing }: { model: ModelResult; customDrawing: boolean }): ReactElement {
+function ForwardFlow({ model, customDrawing, pixelSize }: { model: ModelResult; customDrawing: boolean; pixelSize: number }): ReactElement {
   const preprocessingSteps = customDrawing ? [
     ["DENOISE", "remove small noise"],
     ["CROP", "keep largest ink"],
     ["SQUARE", "resize crop to square"],
-    ["RESIZE", "area average to 8×8"],
+    ["RESIZE", `area average to ${pixelSize}×${pixelSize}`],
   ] : [];
   return (
     <div className="predict-forward-flow">
       <div className="predict-flow-step predict-flow-input">
         <span className="section-kicker">INPUT</span>
-        <strong>{customDrawing ? "128×128 ink" : "64 pixels"}</strong>
-        <small>{customDrawing ? "freehand canvas" : "8 × 8 grayscale values"}</small>
+        <strong>{customDrawing ? "128×128 ink" : `${pixelSize * pixelSize} pixels`}</strong>
+        <small>{customDrawing ? "freehand canvas" : `${pixelSize} × ${pixelSize} grayscale values`}</small>
       </div>
       {preprocessingSteps.map(([title, detail]) => (
         <span className="predict-flow-layer" key={title}>
           <span className="predict-flow-arrow" aria-hidden="true">→</span>
           <div className="predict-flow-step is-preprocess">
             <span className="section-kicker">{title}</span>
-            <strong>{title === "RESIZE" ? "8×8 pixels" : title === "SQUARE" ? "square image" : title === "CROP" ? "largest region" : "clean ink"}</strong>
+            <strong>{title === "RESIZE" ? `${pixelSize}×${pixelSize} pixels` : title === "SQUARE" ? "square image" : title === "CROP" ? "largest region" : "clean ink"}</strong>
             <small>{detail}</small>
           </div>
         </span>
@@ -391,7 +396,7 @@ function ForwardFlow({ model, customDrawing }: { model: ModelResult; customDrawi
 
 export function PredictPanel(): ReactElement {
   const [meta, setMeta] = useState<PredictMeta | null>(null);
-  const [pixels, setPixels] = useState<number[]>(defaultPixels);
+  const [pixels, setPixels] = useState<number[]>([]);
   const [drawing, setDrawing] = useState<number[]>(blankDrawing);
   const [normalizedPixels, setNormalizedPixels] = useState<number[] | null>(null);
   const [sampleIndex, setSampleIndex] = useState<number | null>(null);
@@ -401,6 +406,7 @@ export function PredictPanel(): ReactElement {
   const [status, setStatus] = useState<PredictStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const predictionSequenceRef = useRef(0);
+  const pixelSize = meta?.dataset.input_shape[0] ?? 8;
 
   const selectedModelMeta = useMemo(
     () => meta?.models.find((model) => model.id === selectedModelId) ?? meta?.models[0] ?? null,
@@ -421,7 +427,7 @@ export function PredictPanel(): ReactElement {
     const sample = (await response.json()) as { index: number; pixels: number[][]; label: number };
     const nextPixels = flattenPixels(sample.pixels);
     setPixels(nextPixels);
-    setDrawing(sampleToDrawing(nextPixels));
+    setDrawing(sampleToDrawing(nextPixels, sample.pixels.length));
     setNormalizedPixels(nextPixels);
     setSampleIndex(sample.index);
     setSampleLabel(sample.label);
@@ -528,7 +534,7 @@ export function PredictPanel(): ReactElement {
   }
 
   function clearPixels(): void {
-    setPixels(defaultPixels());
+    setPixels(defaultPixels(pixelSize));
     setDrawing(blankDrawing());
     setNormalizedPixels(null);
     setSampleIndex(null);
@@ -584,11 +590,11 @@ export function PredictPanel(): ReactElement {
               <div className="predict-pixel-frame">
                 <FreehandCanvas drawing={drawing} onCommit={commitDrawing} />
                 <div className="predict-pixel-scale"><span>freehand</span><span>128×128 canvas</span><span>ink</span></div>
-                <NormalizedPreview pixels={normalizedPixels} />
+                <NormalizedPreview pixels={normalizedPixels} pixelSize={pixelSize} />
                 {result?.preprocessing && (
                   <p className="predict-preprocess-meta">
                     Crop {result.preprocessing.bounding_box.width}×{result.preprocessing.bounding_box.height}
-                    {" · "}square {result.preprocessing.square_size}px{ " · " }resize 8×8
+                    {" · "}square {result.preprocessing.square_size}px{ " · " }resize {pixelSize}×{pixelSize}
                   </p>
                 )}
               </div>
@@ -603,7 +609,7 @@ export function PredictPanel(): ReactElement {
                 </button>
                 <button className="button button-quiet" type="button" onClick={clearPixels}>Clear grid</button>
               </div>
-              <p className="predict-input-note">Draw freely. The backend removes noise, crops the ink, squares it and resizes it to 8×8 before prediction.</p>
+              <p className="predict-input-note">Draw freely. The backend removes noise, crops the ink, squares it and resizes it to {pixelSize}×{pixelSize} before prediction.</p>
             </section>
             <section className="predict-dataset-note">
               <span className="section-kicker">DATASET</span>
@@ -625,10 +631,10 @@ export function PredictPanel(): ReactElement {
               <div className="predict-pipeline" aria-label="Prediction pipeline">
                 {result?.preprocessing ? (
                   <>
-                    <span>128×128 ink</span><b>→</b><span>denoise</span><b>→</b><span>crop</span><b>→</b><span>square</span><b>→</b><span>resize 8×8</span><b>→</b><span>64 features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span>
+                    <span>128×128 ink</span><b>→</b><span>denoise</span><b>→</b><span>crop</span><b>→</b><span>square</span><b>→</b><span>resize {pixelSize}×{pixelSize}</span><b>→</b><span>{pixelSize * pixelSize} features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span>
                   </>
                 ) : (
-                  <><span>8×8 pixels</span><b>→</b><span>64 features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span></>
+                  <><span>{pixelSize}×{pixelSize} pixels</span><b>→</b><span>{pixelSize * pixelSize} features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span></>
                 )}
               </div>
               <div className="predict-model-grid">
@@ -657,7 +663,7 @@ export function PredictPanel(): ReactElement {
               </div>
               {selectedModelResult ? (
                 <>
-                  <ForwardFlow model={selectedModelResult} customDrawing={result?.preprocessing != null} />
+                  <ForwardFlow model={selectedModelResult} customDrawing={result?.preprocessing != null} pixelSize={pixelSize} />
                   <div className="predict-trace-grid">
                     <div>
                       <div className="section-kicker">LAYER ACTIVATIONS</div>

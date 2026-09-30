@@ -5,13 +5,21 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-from .digits_dataset import load_mnist, normalize_mnist_images
+from .digits_config import (
+    DATASET_DIR,
+    DATASET_PATH,
+    MODEL_ARTIFACT_PATH,
+    PIXEL_SIZE,
+    RAW_DATASET_PATH,
+)
+from .digits_augmentation import build_augmented_variants, repeat_labels
 from .digits_models import (
     CLASS_COUNT,
     LOGISTIC_CANDIDATES,
@@ -28,16 +36,36 @@ from .digits_models import (
     model_metadata,
     parameter_count,
 )
+from .model_config import (
+    AUGMENT_FACTOR,
+    AUGMENT_SCALE_RANGE,
+    AUGMENT_SHIFT_PIXELS,
+    AUGMENT_STROKE_VARIANTS,
+    AUGMENT_TRAINING,
+)
 
 
-OUTPUT_PATH = Path(__file__).with_name("artifacts") / "digits_models.json"
+OUTPUT_PATH = MODEL_ARTIFACT_PATH
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
 def main() -> None:
-    raw_train_images, labels, raw_test_images, test_labels = load_mnist()
-    features, test_features = normalize_mnist_images(raw_train_images, raw_test_images)
+    if not DATASET_PATH.exists():
+        raise FileNotFoundError(
+            f"Prepared dataset is missing: {DATASET_PATH}. "
+            "Run mnist_dataset.ipynb first with the current ANN_DIGIT_SIZE."
+        )
+    data = np.load(DATASET_PATH)
+    raw_data = np.load(RAW_DATASET_PATH)
+    features = np.asarray(data["X_train_pixels"], dtype=float).reshape(len(data["y_train"]), -1)
+    labels = np.asarray(data["y_train"], dtype=int)
+    test_features = np.asarray(data["X_test_pixels"], dtype=float).reshape(len(data["y_test"]), -1)
+    test_labels = np.asarray(data["y_test"], dtype=int)
+    if features.shape[1] != PIXEL_SIZE * PIXEL_SIZE:
+        raise ValueError(
+            f"Prepared dataset has {features.shape[1]} features, expected {PIXEL_SIZE * PIXEL_SIZE}."
+        )
     train_indices, validation_indices = train_test_split(
         np.arange(len(labels)),
         test_size=0.2,
@@ -45,8 +73,23 @@ def main() -> None:
         random_state=RANDOM_SEED + 1,
     )
 
-    training_features = features[train_indices]
-    training_labels = labels[train_indices]
+    original_training_features = features[train_indices]
+    original_training_labels = labels[train_indices]
+    if AUGMENT_TRAINING:
+        augmented_features = build_augmented_variants(
+            raw_data['X_train_images'][train_indices],
+            factor=AUGMENT_FACTOR,
+            shift_pixels=AUGMENT_SHIFT_PIXELS,
+            stroke_variants=AUGMENT_STROKE_VARIANTS,
+            scale_range=AUGMENT_SCALE_RANGE,
+            seed=RANDOM_SEED,
+        )
+        training_features = np.vstack((original_training_features, augmented_features))
+        training_labels = repeat_labels(original_training_labels, AUGMENT_FACTOR)
+    else:
+        augmented_features = np.empty((0, PIXEL_COUNT), dtype=np.float32)
+        training_features = original_training_features
+        training_labels = original_training_labels
     tuning_scaler = StandardScaler().fit(training_features)
     tuning_train = tuning_scaler.transform(training_features)
     tuning_validation = tuning_scaler.transform(features[validation_indices])
@@ -98,6 +141,7 @@ def main() -> None:
     )
 
     one_layer_config = MODEL_CONFIGS["mlp_4_one_layer"]
+    one_layer_hidden = tuple(one_layer_config["hidden_layer_sizes"])
     small_one_layer = build_mlp(
         one_layer_config["hidden_layer_sizes"],
         one_layer_config["activation"],
@@ -108,11 +152,11 @@ def main() -> None:
     models.append(
         model_metadata(
             "mlp-4-one-layer",
-            "MLP · 4 neurons · 1 layer",
+            f"MLP · {one_layer_hidden[0]} neurons · 1 layer",
             "ann",
             small_one_layer,
-            [PIXEL_COUNT, 4, CLASS_COUNT],
-            ["tanh", "softmax"],
+            [PIXEL_COUNT, *one_layer_hidden, CLASS_COUNT],
+            [one_layer_config["activation"], "softmax"],
             small_one_layer.score(scaled_test_features, test_labels),
             None,
             "tanh",
@@ -120,6 +164,7 @@ def main() -> None:
     )
 
     two_layer_config = MODEL_CONFIGS["mlp_4_two_layers"]
+    two_layer_hidden = tuple(two_layer_config["hidden_layer_sizes"])
     small_two_layers = build_mlp(
         two_layer_config["hidden_layer_sizes"],
         two_layer_config["activation"],
@@ -130,11 +175,11 @@ def main() -> None:
     models.append(
         model_metadata(
             "mlp-4-two-layer",
-            "MLP · 4 neurons · 2 layers",
+            f"MLP · {two_layer_hidden[0]} neurons · 2 layers",
             "ann",
             small_two_layers,
-            [PIXEL_COUNT, 4, 4, CLASS_COUNT],
-            ["tanh", "tanh", "softmax"],
+            [PIXEL_COUNT, *two_layer_hidden, CLASS_COUNT],
+            [two_layer_config["activation"]] * len(two_layer_hidden) + ["softmax"],
             small_two_layers.score(scaled_test_features, test_labels),
             None,
             "tanh",
@@ -170,15 +215,16 @@ def main() -> None:
     )
 
     artifact = {
-        "version": 3,
+        "version": 4,
         "random_seed": RANDOM_SEED,
+        "pixel_size": PIXEL_SIZE,
         "dataset": {
             "name": "MNIST handwritten digits",
-            "description": "Real handwritten digit images from MNIST, normalized to 8x8 grayscale pixels for this demo.",
+            "description": f"Real handwritten digit images from MNIST, normalized to {PIXEL_SIZE}x{PIXEL_SIZE} grayscale pixels for this demo.",
             "sample_count": int(len(labels) + len(test_labels)),
             "training_sample_count": int(len(labels)),
             "test_sample_count": int(len(test_labels)),
-            "input_shape": [8, 8],
+            "input_shape": [PIXEL_SIZE, PIXEL_SIZE],
             "feature_count": PIXEL_COUNT,
             "class_count": CLASS_COUNT,
             "pixel_min": 0,
@@ -187,8 +233,8 @@ def main() -> None:
             "source_url": "https://yann.lecun.com/exdb/mnist/",
         },
         "preprocessing": {
-            "name": "CropSquareResize8 + StandardScaler",
-            "feature_transform": "denoise at 50% of max ink, keep largest component, crop foreground, resize to square, area-average resize to 8x8, scale intensity to 0..16",
+            "name": f"CropSquareResize{PIXEL_SIZE} + StandardScaler",
+            "feature_transform": f"denoise at 50% of max ink, keep largest component, crop foreground, resize to square, area-average resize to {PIXEL_SIZE}x{PIXEL_SIZE}, scale intensity to 0..16",
             "mean": scaler.mean_.astype(float).tolist(),
             "std": scaler.scale_.astype(float).tolist(),
         },
@@ -199,11 +245,15 @@ def main() -> None:
         "test_labels": test_labels.astype(int).tolist(),
         "demo_sample_index": demo_sample_index,
         "augmentation": {
-            "source_count": int(len(train_indices)),
+            "enabled": AUGMENT_TRAINING,
+            "factor": AUGMENT_FACTOR,
+            "source_count": int(len(original_training_features)),
             "generated_count": int(len(training_features)),
-            "shifts": [],
-            "rotations_degrees": [],
-            "applied_to": "disabled for MNIST; the source already contains 60,000 real handwritten training images",
+            "variant_count": int(len(augmented_features)),
+            "shift_pixels": AUGMENT_SHIFT_PIXELS,
+            "stroke_variants": AUGMENT_STROKE_VARIANTS,
+            "scale_range": list(AUGMENT_SCALE_RANGE),
+            "applied_to": "fit split only; validation and test remain unchanged",
         },
         "baseline_tuning": {
             "rounds": SEARCH_ROUNDS,
@@ -235,6 +285,7 @@ def main() -> None:
         "models": models,
     }
 
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     print(f"Wrote {OUTPUT_PATH}")
