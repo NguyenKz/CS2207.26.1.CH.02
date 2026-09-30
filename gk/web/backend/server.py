@@ -19,6 +19,7 @@ from .ann_core import (
     DEFAULT_SAMPLE_COUNT,
     SAMPLES_PER_CLASS,
     SUPPORTED_ACTIVATIONS,
+    SUPPORTED_INPUT_FEATURE_COUNTS,
     SimpleANN,
     prepare_classification_data,
 )
@@ -55,12 +56,22 @@ class TrainConfig(BaseModel):
     validation_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
     test_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
     holdout_percentage: float = Field(default=10.0, gt=0.0, lt=100.0)
-    hidden_neuron_count: int = Field(default=8, ge=1, le=32)
+    input_feature_count: int = Field(default=8)
+    hidden_neuron_count: int = Field(default=8, ge=1, le=128)
     random_seed: int = 42
     early_stopping: bool = False
     early_stopping_patience: int = Field(default=40, ge=1, le=500)
     early_stopping_min_delta: float = Field(default=0.001, ge=0.0, le=1.0)
     activations: list[str] = Field(default_factory=lambda: list(SUPPORTED_ACTIVATIONS))
+
+    @field_validator("input_feature_count")
+    @classmethod
+    def validate_input_feature_count(cls, value: int) -> int:
+        if value not in SUPPORTED_INPUT_FEATURE_COUNTS:
+            raise ValueError(
+                f"input_feature_count must be one of: {list(SUPPORTED_INPUT_FEATURE_COUNTS)}"
+            )
+        return value
 
     @field_validator("activations")
     @classmethod
@@ -111,7 +122,7 @@ async def train_activation(
     cancel_event: asyncio.Event,
 ) -> dict[str, Any]:
     model = SimpleANN(
-        input_feature_count=4,
+        input_feature_count=config.input_feature_count,
         hidden_neuron_count=config.hidden_neuron_count,
         output_class_count=CLASS_COUNT,
         learning_rate=config.learning_rate,
@@ -204,6 +215,7 @@ async def stream_training(
         validation_percentage=config.validation_percentage,
         test_percentage=config.test_percentage,
         holdout_percentage=config.holdout_percentage,
+        input_feature_count=config.input_feature_count,
     )
     event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
@@ -219,6 +231,8 @@ async def stream_training(
             "sample_count": config.sample_count,
             "class_count": CLASS_COUNT,
             "samples_per_class": SAMPLES_PER_CLASS,
+            "input_feature_count": config.input_feature_count,
+            "hidden_neuron_count": config.hidden_neuron_count,
             "batch_size": config.batch_size,
             "train_percentage": config.train_percentage,
             "validation_percentage": config.validation_percentage,
@@ -433,7 +447,7 @@ class InspectBuildConfig(BaseModel):
 
 class InspectForwardRequest(BaseModel):
     model_id: str
-    features: list[float] = Field(min_length=4, max_length=4)
+    features: list[float] = Field(min_length=8, max_length=8)
 
 
 def _get_inspect_session(model_id: str) -> InspectSession:
@@ -444,7 +458,7 @@ def _get_inspect_session(model_id: str) -> InspectSession:
 
 
 def _serialize_forward(session: InspectSession, features_raw: np.ndarray) -> dict[str, Any]:
-    features_raw = np.asarray(features_raw, dtype=float).reshape(1, 4)
+    features_raw = np.asarray(features_raw, dtype=float).reshape(1, 8)
     features_normalized = (features_raw - session.feature_means) / session.feature_stds
     trace = session.model.trace(features_normalized)
     hidden_pre_activations = trace["hidden_pre_activations"]
@@ -515,6 +529,7 @@ async def inspect_build(config: InspectBuildConfig) -> dict[str, Any]:
         random_seed=config.random_seed,
         difficulty=config.difficulty,
         sample_count=config.sample_count,
+        input_feature_count=8,
     )
     feature_means = data.training_features_raw.mean(axis=0)
     feature_stds = data.training_features_raw.std(axis=0)
@@ -528,7 +543,7 @@ async def inspect_build(config: InspectBuildConfig) -> dict[str, Any]:
     hidden_layers = [(layer.neurons, layer.activation) for layer in configured_layers]
     first_activation = hidden_layers[0][1]
     model = SimpleANN(
-        input_feature_count=4,
+        input_feature_count=8,
         output_class_count=CLASS_COUNT,
         learning_rate=config.learning_rate,
         random_seed=config.random_seed,

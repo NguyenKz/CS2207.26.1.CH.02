@@ -177,18 +177,18 @@ function NetworkGraph({
     }));
   };
 
-  const inputValues = trace?.features_normalized ?? [null, null, null, null];
+  const inputValues = trace?.features_normalized ?? Array.from({ length: 8 }, () => null);
   const hiddenValues = trace?.hidden.map((neuron) => neuron.h) ?? Array.from({ length: hiddenCount }, () => null);
-  const outputValues = trace?.output.map((neuron) => neuron.probability) ?? [null, null, null];
+  const outputValues = trace?.output.map((neuron) => neuron.probability) ?? Array.from({ length: 10 }, () => null);
 
   const inputNodes = (isMobile
-    ? Array.from({ length: 4 }, (_, index) => ({
-        x: 32 + (index / 3) * (width - 64),
+    ? Array.from({ length: 8 }, (_, index) => ({
+        x: 32 + (index / 7) * (width - 64),
         y: 78,
         label: "",
         value: null,
       }))
-    : layerPositions(4, 90)
+    : layerPositions(8, 90)
   ).map((point, index) => ({
     ...point,
     label: `x${index + 1}`,
@@ -224,13 +224,13 @@ function NetworkGraph({
   }));
 
   const outputNodes = (isMobile
-    ? Array.from({ length: 3 }, (_, index) => ({
-        x: 32 + (index / 2) * (width - 64),
+    ? Array.from({ length: 10 }, (_, index) => ({
+        x: 32 + (index / 9) * (width - 64),
         y: mobileOutputY,
         label: "",
         value: null,
       }))
-    : layerPositions(3, width - 90)
+    : layerPositions(10, width - 90)
   ).map((point, index) => ({
     ...point,
     label: `O${index}`,
@@ -454,11 +454,11 @@ function LayeredNetworkGraph({
     {
       key: "input",
       label: "Input",
-      size: 4,
+      size: 8,
       activation: "features",
       kind: "input",
       layerIndex: null,
-      values: trace?.features_normalized ?? [null, null, null, null],
+      values: trace?.features_normalized ?? Array.from({ length: 8 }, () => null),
     },
     ...studioLayers.map((layer, index) => ({
       key: layer.id,
@@ -473,11 +473,12 @@ function LayeredNetworkGraph({
     {
       key: "output",
       label: "Softmax",
-      size: 3,
+      size: 10,
       activation: "probability",
       kind: "output",
       layerIndex: null,
-      values: trace?.output.map((neuron) => neuron.probability) ?? [null, null, null],
+      values: trace?.output.map((neuron) => neuron.probability)
+        ?? Array.from({ length: 10 }, () => null),
     },
   ];
 
@@ -845,7 +846,7 @@ function ModelArchitecturePreview({
       <div className="studio-architecture-track">
         <div className="studio-layer-block studio-layer-input">
           <span className="studio-layer-index">INPUT</span>
-          <strong>4</strong>
+          <strong>8</strong>
           <small>features</small>
         </div>
         {layers.map((layer, index) => {
@@ -882,7 +883,7 @@ export function InspectPanel(): ReactElement {
   const [studioLayers, setStudioLayers] = useState<StudioLayer[]>(DEFAULT_STUDIO_LAYERS);
   const [epochs, setEpochs] = useState(200);
   const [learningRate, setLearningRate] = useState(0.05);
-  const [features, setFeatures] = useState<[number, number, number, number]>([0, 0, 0, 0]);
+  const [features, setFeatures] = useState<number[]>(Array.from({ length: 8 }, () => 0));
   const [modelId, setModelId] = useState<string | null>(null);
   const [buildInfo, setBuildInfo] = useState<BuildResult | null>(null);
   const [trace, setTrace] = useState<ForwardTrace | null>(null);
@@ -967,11 +968,8 @@ export function InspectPanel(): ReactElement {
           features: number[];
           label: number;
         };
-        const nextFeatures: [number, number, number, number] = [
-          formatInputValue(sample.features[0]),
-          formatInputValue(sample.features[1]),
-          formatInputValue(sample.features[2]),
-          formatInputValue(sample.features[3]),
+        const nextFeatures: number[] = [
+          ...sample.features.slice(0, 8).map((value) => formatInputValue(value)),
         ];
         setFeatures(nextFeatures);
         setSampleLabel(sample.label);
@@ -1044,11 +1042,8 @@ export function InspectPanel(): ReactElement {
         features: number[];
         label: number;
       };
-      const nextFeatures: [number, number, number, number] = [
-        formatInputValue(sample.features[0]),
-        formatInputValue(sample.features[1]),
-        formatInputValue(sample.features[2]),
-        formatInputValue(sample.features[3]),
+      const nextFeatures: number[] = [
+        ...sample.features.slice(0, 8).map((value) => formatInputValue(value)),
       ];
         setFeatures(nextFeatures);
       setSampleLabel(sample.label);
@@ -1061,7 +1056,7 @@ export function InspectPanel(): ReactElement {
 
   function updateFeature(index: number, value: number): void {
     setFeatures((current) => {
-      const next = [...current] as [number, number, number, number];
+      const next = [...current];
       next[index] = value;
       return next;
     });
@@ -1213,7 +1208,7 @@ export function InspectPanel(): ReactElement {
             <div className="section-heading compact">
               <div>
                 <div className="section-kicker">INPUT</div>
-                <h2>Four features</h2>
+                <h2>Eight features</h2>
               </div>
               <p>
                 {sampleLabel == null
@@ -1270,7 +1265,7 @@ export function InspectPanel(): ReactElement {
               <div>
                 <div className="section-kicker">MODEL MAP + TRACE</div>
                 <h2>
-                  {[4, ...studioLayers.map((layer) => layer.neurons), 3].join(" → ")}
+                  {[8, ...studioLayers.map((layer) => layer.neurons), 10].join(" → ")}
                 </h2>
               </div>
               <p>

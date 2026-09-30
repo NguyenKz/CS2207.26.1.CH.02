@@ -11,9 +11,11 @@ const ACTIVATIONS = [
   "softplus",
   "identity",
 ] as const;
-const CLASS_COUNT = 3;
+const CLASS_COUNT = 10;
 const SAMPLES_PER_CLASS = 1000;
 const DEFAULT_SAMPLE_COUNT = CLASS_COUNT * SAMPLES_PER_CLASS;
+const INPUT_FEATURE_OPTIONS = [8, 32, 128, 512, 1024] as const;
+const HIDDEN_NEURON_OPTIONS = [8, 16, 32, 64, 128] as const;
 
 type ActivationName = (typeof ACTIVATIONS)[number];
 type RunState = "idle" | "connecting" | "running" | "completed" | "cancelled" | "error";
@@ -30,6 +32,7 @@ type RunConfig = {
   validation_percentage: number;
   test_percentage: number;
   holdout_percentage: number;
+  input_feature_count: number;
   hidden_neuron_count: number;
   random_seed: number;
   early_stopping: boolean;
@@ -95,17 +98,18 @@ type SocketMessage = {
 };
 
 const DEFAULT_CONFIG: RunConfig = {
-  epochs: 2000,
-  delay_seconds: 0.001,
-  learning_rate: 0.05,
-  difficulty: 0.5,
+  epochs: 600,
+  delay_seconds: 0.01,
+  learning_rate: 0.08,
+  difficulty: 0.7,
   sample_count: DEFAULT_SAMPLE_COUNT,
   batch_size: 32,
   train_percentage: 60,
   validation_percentage: 15,
   test_percentage: 15,
   holdout_percentage: 10,
-  hidden_neuron_count: 8,
+  input_feature_count: 32,
+  hidden_neuron_count: 32,
   random_seed: 42,
   early_stopping: false,
   early_stopping_patience: 40,
@@ -120,6 +124,16 @@ const ACTIVATION_LABELS: Record<ActivationName, string> = {
   leaky_relu: "Leaky ReLU",
   softplus: "Softplus",
   identity: "Identity",
+};
+
+/** One-line teaching cue: formula + what to watch while curves move. */
+const ACTIVATION_CUES: Record<ActivationName, { formula: string; watch: string }> = {
+  tanh: { formula: "tanh(z)", watch: "đối xứng ±1 · dễ bão hòa ở biên" },
+  sigmoid: { formula: "σ(z)", watch: "ra (0,1) · bão hòa sớm → học chậm" },
+  relu: { formula: "max(0, z)", watch: "học nhanh · âm = 0 (có thể chết neuron)" },
+  leaky_relu: { formula: "max(αz, z)", watch: "giống ReLU · âm vẫn có gradient nhẹ" },
+  softplus: { formula: "log(1+eᶻ)", watch: "ReLU mượt · không đứt tại 0" },
+  identity: { formula: "z", watch: "không phi tuyến · thường kém nhất" },
 };
 
 const ACTIVATION_COLORS: Record<ActivationName, string> = {
@@ -274,14 +288,112 @@ function LossChart({
   );
 }
 
-function NetworkPipeline({ currentEpoch, totalEpochs }: { currentEpoch: number; totalEpochs: number }): ReactElement {
-  const steps = [
-    ["01", "Input", "(n, 4)", "bốn feature"],
-    ["02", "Weighted sum", "(n, 8)", "X @ W₁ + b₁"],
-    ["03", "Activation", "(n, 8)", "tanh / ReLU / ..."],
-    ["04", "Output", "(n, 3)", "softmax probabilities"],
-    ["05", "Loss", "scalar", "cross-entropy"],
-    ["06", "Update", "weights", "backprop + gradient descent"],
+function PipelineSizeSelect({
+  value,
+  options,
+  disabled,
+  ariaLabel,
+  onChange,
+}: {
+  value: number;
+  options: readonly number[];
+  disabled: boolean;
+  ariaLabel: string;
+  onChange: (value: number) => void;
+}): ReactElement {
+  return (
+    <label className={`pipeline-size ${disabled ? "is-disabled" : ""}`}>
+      <span className="pipeline-size-prefix">(n,&nbsp;</span>
+      <select
+        value={value}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(Number(event.target.value))}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+      <span className="pipeline-size-suffix">)</span>
+    </label>
+  );
+}
+
+function NetworkPipeline({
+  inputFeatureCount,
+  hiddenNeuronCount,
+  currentEpoch,
+  totalEpochs,
+  disabled,
+  onInputFeatureCountChange,
+  onHiddenNeuronCountChange,
+}: {
+  inputFeatureCount: number;
+  hiddenNeuronCount: number;
+  currentEpoch: number;
+  totalEpochs: number;
+  disabled: boolean;
+  onInputFeatureCountChange: (value: number) => void;
+  onHiddenNeuronCountChange: (value: number) => void;
+}): ReactElement {
+  const steps: Array<{
+    number: string;
+    title: string;
+    body: ReactElement;
+    note: string;
+  }> = [
+    {
+      number: "01",
+      title: "Input",
+      body: (
+        <PipelineSizeSelect
+          value={inputFeatureCount}
+          options={INPUT_FEATURE_OPTIONS}
+          disabled={disabled}
+          ariaLabel="Input feature count"
+          onChange={onInputFeatureCountChange}
+        />
+      ),
+      note: "đầu vào dataset",
+    },
+    {
+      number: "02",
+      title: "Weighted sum",
+      body: (
+        <PipelineSizeSelect
+          value={hiddenNeuronCount}
+          options={HIDDEN_NEURON_OPTIONS}
+          disabled={disabled}
+          ariaLabel="Hidden neuron count"
+          onChange={onHiddenNeuronCountChange}
+        />
+      ),
+      note: "X @ W₁ + b₁",
+    },
+    {
+      number: "03",
+      title: "Activation",
+      body: <code className="pipeline-shape">(n, {hiddenNeuronCount})</code>,
+      note: "chỉ đổi f ở đây",
+    },
+    {
+      number: "04",
+      title: "Output",
+      body: <code className="pipeline-shape">(n, {CLASS_COUNT})</code>,
+      note: "softmax · 10 classes",
+    },
+    {
+      number: "05",
+      title: "Loss",
+      body: <code className="pipeline-shape">scalar</code>,
+      note: "cross-entropy",
+    },
+    {
+      number: "06",
+      title: "Update",
+      body: <code className="pipeline-shape">weights</code>,
+      note: "backprop + GD",
+    },
   ];
 
   return (
@@ -290,17 +402,17 @@ function NetworkPipeline({ currentEpoch, totalEpochs }: { currentEpoch: number; 
       <div className="pipeline-heading">
         <div>
           <h2 id="pipeline-title">Một epoch, nhìn từ bên trong</h2>
-          <p>Không có bước nào bị ẩn sau một API model có sẵn.</p>
+          <p>Số chiều Input / Hidden chỉnh trực tiếp trên shape. Output cố định 10 lớp.</p>
         </div>
         <div className="epoch-counter"><span>Epoch</span><strong>{currentEpoch}</strong><small>/ {totalEpochs}</small></div>
       </div>
       <div className="pipeline-steps">
-        {steps.map(([number, title, shape, detail], index) => (
-          <div className="pipeline-step" key={number}>
-            <span className="pipeline-number">{number}</span>
-            <strong>{title}</strong>
-            <code>{shape}</code>
-            <small>{detail}</small>
+        {steps.map((step, index) => (
+          <div className="pipeline-step" key={step.number}>
+            <span className="pipeline-number">{step.number}</span>
+            <strong>{step.title}</strong>
+            {step.body}
+            <small>{step.note}</small>
             {index < steps.length - 1 && <span className="pipeline-arrow" aria-hidden="true">→</span>}
           </div>
         ))}
@@ -320,6 +432,7 @@ function ActivationCard({
 }): ReactElement {
   const progress = metric.totalEpochs ? (metric.epoch / metric.totalEpochs) * 100 : 0;
   const maxTrainingLoss = history.length ? Math.max(...history.map((point) => point.trainingLoss)) : null;
+  const cue = ACTIVATION_CUES[activation];
   return (
     <article className={`activation-card activation-${activation}`}>
       <div className="card-topline">
@@ -329,6 +442,10 @@ function ActivationCard({
         </div>
         <StatusMark status={metric.status} />
       </div>
+      <p className="activation-cue">
+        <code>{cue.formula}</code>
+        <span>{cue.watch}</span>
+      </p>
       <div className="progress-track" aria-label={`${ACTIVATION_LABELS[activation]} progress`}>
         <span style={{ width: `${progress}%`, backgroundColor: ACTIVATION_COLORS[activation] }} />
       </div>
@@ -493,7 +610,7 @@ function App(): ReactElement {
   };
 
   const bestValidation = summary?.results.reduce<SummaryResult | null>((best, result) => {
-    if (!best || (result.validation_loss ?? Infinity) < (best.validation_loss ?? Infinity)) return result;
+    if (!best || (result.validation_accuracy ?? -1) > (best.validation_accuracy ?? -1)) return result;
     return best;
   }, null);
 
@@ -542,9 +659,11 @@ function App(): ReactElement {
             <div className="lesson-body">
               <div className="lesson-intro">
                 <div className="lesson-copy">
-                  <div className="section-kicker">LESSON 01 / TRAINING</div>
-                  <h1>Watch</h1>
-                  <p className="intro-copy">Six activation functions. One dataset. Every forward pass, loss and weight update visible as it happens.</p>
+                  <div className="section-kicker">LESSON 01 / SO SÁNH ACTIVATION</div>
+                  <h1>Cùng bài, khác hàm kích hoạt</h1>
+                  <p className="intro-copy">
+                    Sáu mạng giống hệt nhau — chỉ đổi f ở lớp ẩn. Quan sát ai giảm loss nhanh, ai bão hòa sớm, và Identity (không phi tuyến) thường kém nhất khi bài khó.
+                  </p>
                 </div>
               </div>
 
@@ -570,19 +689,27 @@ function App(): ReactElement {
             </div>
           </section>
 
-          <NetworkPipeline currentEpoch={currentEpoch} totalEpochs={runConfig.epochs} />
+          <NetworkPipeline
+            inputFeatureCount={runConfig.input_feature_count}
+            hiddenNeuronCount={runConfig.hidden_neuron_count}
+            currentEpoch={currentEpoch}
+            totalEpochs={runConfig.epochs}
+            disabled={controlsDisabled}
+            onInputFeatureCountChange={(value) => setRunConfig({ ...runConfig, input_feature_count: value })}
+            onHiddenNeuronCountChange={(value) => setRunConfig({ ...runConfig, hidden_neuron_count: value })}
+          />
 
           <div className="training-stage">
             <section className="section-block" aria-labelledby="lanes-title">
-              <div className="section-heading"><div><div className="section-kicker">LIVE COMPARISON</div><h2 id="lanes-title">Six learners, same starting line</h2></div><p>Solid line = train loss · dashed line = validation loss</p></div>
+              <div className="section-heading"><div><div className="section-kicker">LIVE COMPARISON</div><h2 id="lanes-title">Sáu lane, một điểm xuất phát</h2></div><p>Mỗi thẻ một hàm · đọc công thức rồi nhìn đường loss</p></div>
               <div className="activation-grid">
                 {ACTIVATIONS.map((activation) => <ActivationCard key={activation} activation={activation} metric={metrics[activation]} history={histories[activation]} />)}
               </div>
             </section>
 
             <section className="lower-grid">
-              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curves are moving?</h2></div><p>Click a label to isolate a learner.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
-              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">The run is measurable, not magical.</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Final accuracy uses the holdout set only after training; it never updates weights or early stopping.</p></section>}
+              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Đường nào dốc xuống trước?</h2></div><p>Bấm tên để ẩn/hiện · thử ReLU vs Sigmoid, rồi Identity vs phần còn lại</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
+              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">Ai thắng trên validation?</h2></div><p>{summary.durationMs} ms · {summary.results.length} hàm kích hoạt · highlight = validation accuracy cao nhất</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Đừng nhìn mỗi loss: Identity đôi khi có CE thấp hơn nhưng đoán đúng ít hơn (acc thấp). Classification lấy accuracy làm thước đo chính. Final acc chỉ đo holdout sau train — không cập nhật trọng số. ReLU/Leaky/Softplus thường acc cao hơn; Sigmoid/tanh dễ bão hòa; Identity thiếu phi tuyến.</p></section>}
             </section>
           </div>
         </>

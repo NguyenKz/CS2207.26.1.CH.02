@@ -26,9 +26,10 @@ SUPPORTED_ACTIVATIONS: tuple[ActivationName, ...] = (
     "softplus",
     "identity",
 )
-CLASS_COUNT = 3
+CLASS_COUNT = 10
 SAMPLES_PER_CLASS = 1000
 DEFAULT_SAMPLE_COUNT = CLASS_COUNT * SAMPLES_PER_CLASS
+SUPPORTED_INPUT_FEATURE_COUNTS: tuple[int, ...] = (8, 32, 128, 512, 1024)
 
 
 def softmax(logits: np.ndarray) -> np.ndarray:
@@ -104,6 +105,7 @@ def prepare_classification_data(
     validation_percentage: float = 15.0,
     test_percentage: float = 15.0,
     holdout_percentage: float = 10.0,
+    input_feature_count: int = 8,
 ) -> ClassificationData:
     if not 0.0 <= difficulty <= 1.0:
         raise ValueError("difficulty must be between 0.0 and 1.0")
@@ -119,17 +121,30 @@ def prepare_classification_data(
         raise ValueError("all dataset percentages must sum to 100")
     if sample_count < 30:
         raise ValueError("sample_count must be at least 30")
+    if input_feature_count not in SUPPORTED_INPUT_FEATURE_COUNTS:
+        raise ValueError(
+            f"input_feature_count must be one of: {SUPPORTED_INPUT_FEATURE_COUNTS}"
+        )
 
     difficulty_level = float(difficulty)
+    n_features = int(input_feature_count)
+    clusters_per_class = 1 if difficulty_level < 0.5 else 2
+    # sklearn: n_classes * n_clusters_per_class <= 2 ** n_informative
+    min_informative = int(np.ceil(np.log2(CLASS_COUNT * clusters_per_class)))
+    n_informative = max(
+        min_informative,
+        min(n_features, int(round(n_features * (0.35 + 0.4 * difficulty_level)))),
+    )
+    n_redundant = max(0, min(n_features - n_informative, n_features // 4))
     feature_matrix, target_labels = make_classification(
         n_samples=sample_count,
-        n_features=4,
-        n_informative=3 if difficulty_level < 0.5 else 4,
-        n_redundant=0,
+        n_features=n_features,
+        n_informative=n_informative,
+        n_redundant=n_redundant,
         n_repeated=0,
         n_classes=CLASS_COUNT,
-        n_clusters_per_class=1 if difficulty_level < 0.5 else 2,
-        weights=[1 / 3, 1 / 3, 1 / 3],
+        n_clusters_per_class=clusters_per_class,
+        weights=None,
         class_sep=1.4 - 1.2 * difficulty_level,
         flip_y=0.02 + 0.28 * difficulty_level,
         random_state=random_seed,
@@ -174,6 +189,7 @@ def prepare_classification_data(
 
     training_feature_means = training_features_raw.mean(axis=0)
     training_feature_stds = training_features_raw.std(axis=0)
+    training_feature_stds = np.where(training_feature_stds < 1e-8, 1.0, training_feature_stds)
     training_features = (
         training_features_raw - training_feature_means
     ) / training_feature_stds
@@ -188,8 +204,8 @@ def prepare_classification_data(
     ) / training_feature_stds
 
     return ClassificationData(
-        feature_names=tuple(f"feature_{index + 1}" for index in range(4)),
-        class_names=tuple(f"class_{index}" for index in range(3)),
+        feature_names=tuple(f"feature_{index + 1}" for index in range(n_features)),
+        class_names=tuple(f"class_{index}" for index in range(CLASS_COUNT)),
         training_features_raw=training_features_raw,
         training_features=training_features,
         training_labels=training_labels,
