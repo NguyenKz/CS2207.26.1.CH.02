@@ -42,6 +42,10 @@ from .model_config import (
     AUGMENT_SHIFT_PIXELS,
     AUGMENT_STROKE_VARIANTS,
     AUGMENT_TRAINING,
+    architecture_sizes,
+    hidden_activation,
+    hidden_layer_sizes,
+    layer_activations,
 )
 
 
@@ -141,10 +145,10 @@ def main() -> None:
     )
 
     one_layer_config = MODEL_CONFIGS["mlp_4_one_layer"]
-    one_layer_hidden = tuple(one_layer_config["hidden_layer_sizes"])
+    one_layer_hidden = hidden_layer_sizes(one_layer_config)
     small_one_layer = build_mlp(
-        one_layer_config["hidden_layer_sizes"],
-        one_layer_config["activation"],
+        one_layer_hidden,
+        hidden_activation(one_layer_config),
         one_layer_config["learning_rate_init"],
         one_layer_config["max_iter"],
     )
@@ -155,19 +159,19 @@ def main() -> None:
             f"MLP · {one_layer_hidden[0]} neurons · 1 layer",
             "ann",
             small_one_layer,
-            [PIXEL_COUNT, *one_layer_hidden, CLASS_COUNT],
-            [one_layer_config["activation"], "softmax"],
+            architecture_sizes(one_layer_config),
+            layer_activations(one_layer_config),
             small_one_layer.score(scaled_test_features, test_labels),
             None,
-            "tanh",
+            hidden_activation(one_layer_config),
         )
     )
 
     two_layer_config = MODEL_CONFIGS["mlp_4_two_layers"]
-    two_layer_hidden = tuple(two_layer_config["hidden_layer_sizes"])
+    two_layer_hidden = hidden_layer_sizes(two_layer_config)
     small_two_layers = build_mlp(
-        two_layer_config["hidden_layer_sizes"],
-        two_layer_config["activation"],
+        two_layer_hidden,
+        hidden_activation(two_layer_config),
         two_layer_config["learning_rate_init"],
         two_layer_config["max_iter"],
     )
@@ -178,11 +182,11 @@ def main() -> None:
             f"MLP · {two_layer_hidden[0]} neurons · 2 layers",
             "ann",
             small_two_layers,
-            [PIXEL_COUNT, *two_layer_hidden, CLASS_COUNT],
-            [two_layer_config["activation"]] * len(two_layer_hidden) + ["softmax"],
+            architecture_sizes(two_layer_config),
+            layer_activations(two_layer_config),
             small_two_layers.score(scaled_test_features, test_labels),
             None,
-            "tanh",
+            hidden_activation(two_layer_config),
         )
     )
 
