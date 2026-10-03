@@ -129,12 +129,12 @@ const ACTIVATION_LABELS: Record<ActivationName, string> = {
 
 /** One-line teaching cue: formula + what to watch while curves move. */
 const ACTIVATION_CUES: Record<ActivationName, { formula: string; watch: string }> = {
-  tanh: { formula: "tanh(z)", watch: "đối xứng ±1 · dễ bão hòa ở biên" },
-  sigmoid: { formula: "σ(z)", watch: "ra (0,1) · bão hòa sớm → học chậm" },
-  relu: { formula: "max(0, z)", watch: "học nhanh · âm = 0 (có thể chết neuron)" },
-  leaky_relu: { formula: "max(αz, z)", watch: "giống ReLU · âm vẫn có gradient nhẹ" },
-  softplus: { formula: "log(1+eᶻ)", watch: "ReLU mượt · không đứt tại 0" },
-  identity: { formula: "z", watch: "không phi tuyến · thường kém nhất" },
+  tanh: { formula: "tanh(z)", watch: "symmetric around ±1 · can saturate at the edges" },
+  sigmoid: { formula: "σ(z)", watch: "outputs (0, 1) · saturates early, so learning slows" },
+  relu: { formula: "max(0, z)", watch: "learns quickly · negative inputs become 0 (neurons can die)" },
+  leaky_relu: { formula: "max(αz, z)", watch: "like ReLU · negative inputs keep a small gradient" },
+  softplus: { formula: "log(1+eᶻ)", watch: "smooth ReLU · continuous at 0" },
+  identity: { formula: "z", watch: "no nonlinearity · often performs worst" },
 };
 
 const ACTIVATION_COLORS: Record<ActivationName, string> = {
@@ -168,26 +168,26 @@ function createInitialHistory(): Record<ActivationName, LossPoint[]> {
 }
 
 function formatLoss(value: number | null): string {
-  return value === null ? "—" : value.toFixed(4);
+  return value === null ? "n/a" : value.toFixed(4);
 }
 
 function formatAccuracy(value: number | null | undefined): string {
-  return value == null ? "—" : `${(value * 100).toFixed(1)}%`;
+  return value == null ? "n/a" : `${(value * 100).toFixed(1)}%`;
 }
 
 function difficultyDescription(difficulty: number): string {
-  if (difficulty < 0.34) return "Ít noise · lớp dễ tách";
-  if (difficulty < 0.67) return "Noise vừa · ranh giới khó hơn";
-  return "Nhiều noise · lớp chồng lấn";
+  if (difficulty < 0.34) return "Low noise · classes are easy to separate";
+  if (difficulty < 0.67) return "Moderate noise · harder boundaries";
+  return "High noise · classes overlap";
 }
 
 function StatusMark({ status }: { status: Metric["status"] }): ReactElement {
   const labels = {
     idle: "Idle",
-    running: "Đang chạy",
-    completed: "Hoàn tất",
-    cancelled: "Đã dừng",
-    early_stopped: "Dừng sớm",
+    running: "Running",
+    completed: "Completed",
+    cancelled: "Cancelled",
+    early_stopped: "Early stopped",
   };
   return (
     <span className={`status status-${status}`}>
@@ -355,7 +355,7 @@ function NetworkPipeline({
           onChange={onInputFeatureCountChange}
         />
       ),
-      note: "đầu vào dataset",
+      note: "dataset input",
     },
     {
       number: "02",
@@ -375,7 +375,7 @@ function NetworkPipeline({
       number: "03",
       title: "Activation",
       body: <code className="pipeline-shape">(n, {hiddenNeuronCount})</code>,
-      note: "chỉ đổi f ở đây",
+      note: "only f changes here",
     },
     {
       number: "04",
@@ -402,8 +402,8 @@ function NetworkPipeline({
       <div className="section-kicker">THE MECHANISM</div>
       <div className="pipeline-heading">
         <div>
-          <h2 id="pipeline-title">Một epoch, nhìn từ bên trong</h2>
-          <p>Số chiều Input / Hidden chỉnh trực tiếp trên shape. Output cố định 10 lớp.</p>
+          <h2 id="pipeline-title">Inside one epoch</h2>
+          <p>Adjust Input and Hidden dimensions directly in the shape. Output is fixed at 10 classes.</p>
         </div>
         <div className="epoch-counter"><span>Epoch</span><strong>{currentEpoch}</strong><small>/ {totalEpochs}</small></div>
       </div>
@@ -577,7 +577,7 @@ function App(): ReactElement {
     socket.onmessage = (event) => handleMessage(JSON.parse(event.data) as SocketMessage);
     socket.onerror = () => {
       setRunState("error");
-      setErrorMessage("Không thể kết nối backend. Hãy chạy FastAPI ở port 6788.");
+      setErrorMessage("Could not connect to the backend. Start FastAPI on port 6788.");
     };
     socket.onclose = () => setConnectionState("disconnected");
   };
@@ -669,16 +669,16 @@ function App(): ReactElement {
             <div className="lesson-body">
               <div className="lesson-intro">
                 <div className="lesson-copy">
-                  <div className="section-kicker">LESSON 01 / SO SÁNH ACTIVATION</div>
-                  <h1>Cùng bài, khác hàm kích hoạt</h1>
+                  <div className="section-kicker">LESSON 01 / ACTIVATION COMPARISON</div>
+                  <h1>Same task, different activation functions</h1>
                   <p className="intro-copy">
-                    Sáu mạng giống hệt nhau — chỉ đổi f ở lớp ẩn. Quan sát ai giảm loss nhanh, ai bão hòa sớm, và Identity (không phi tuyến) thường kém nhất khi bài khó.
+                    Six identical networks. Only the hidden-layer activation changes. Watch which one reduces loss fastest, which one saturates early, and why Identity, with no nonlinearity, usually performs worst on harder tasks.
                   </p>
                 </div>
               </div>
 
               <section className="control-panel" aria-label="Training controls">
-                <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Dừng nếu validation loss không giảm ≥ {runConfig.early_stopping_min_delta} trong {runConfig.early_stopping_patience} epoch liên tiếp.</small></label></div>
+                <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Stop when validation loss fails to decrease by ≥ {runConfig.early_stopping_min_delta} for {runConfig.early_stopping_patience} consecutive epochs.</small></label></div>
                 <label className="difficulty-field">Difficulty <output>{Math.round(runConfig.difficulty * 100)}%</output><input className="difficulty-range" type="range" min="0" max="100" step="1" value={Math.round(runConfig.difficulty * 100)} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, difficulty: Number(event.target.value) / 100 })} /><span className="difficulty-endpoints"><span>Easy</span><span>Hard</span></span><small>{difficultyDescription(runConfig.difficulty)}</small></label>
                 <div className="dataset-settings" aria-label="Dataset settings">
                   <label>Total<input type="number" min="30" max="10000" step="10" value={runConfig.sample_count} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, sample_count: Number(event.target.value) })} /></label>
@@ -711,15 +711,15 @@ function App(): ReactElement {
 
           <div className="training-stage">
             <section className="section-block" aria-labelledby="lanes-title">
-              <div className="section-heading"><div><div className="section-kicker">LIVE COMPARISON</div><h2 id="lanes-title">Sáu lane, một điểm xuất phát</h2></div><p>Mỗi thẻ một hàm · đọc công thức rồi nhìn đường loss</p></div>
+              <div className="section-heading"><div><div className="section-kicker">LIVE COMPARISON</div><h2 id="lanes-title">Six lanes, one starting point</h2></div><p>Each card shows one function. Read the formula, then follow the loss curve.</p></div>
               <div className="activation-grid">
                 {ACTIVATIONS.map((activation) => <ActivationCard key={activation} activation={activation} metric={metrics[activation]} history={histories[activation]} />)}
               </div>
             </section>
 
             <section className="lower-grid">
-              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Đường nào dốc xuống trước?</h2></div><p>Bấm tên để ẩn/hiện · thử ReLU vs Sigmoid, rồi Identity vs phần còn lại</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
-              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">Ai thắng trên validation?</h2></div><p>{summary.durationMs} ms · {summary.results.length} hàm kích hoạt · highlight = validation accuracy cao nhất</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Đừng nhìn mỗi loss: Identity đôi khi có CE thấp hơn nhưng đoán đúng ít hơn (acc thấp). Classification lấy accuracy làm thước đo chính. Final acc chỉ đo holdout sau train — không cập nhật trọng số. ReLU/Leaky/Softplus thường acc cao hơn; Sigmoid/tanh dễ bão hòa; Identity thiếu phi tuyến.</p></section>}
+              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curve drops first?</h2></div><p>Click a name to hide or show it. Try ReLU vs Sigmoid, then Identity vs the rest.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
+              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">Which model wins on validation?</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions · highlight = highest validation accuracy</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Do not judge by loss alone: Identity can have lower cross-entropy while making fewer correct predictions. Accuracy is the main metric for classification. Final accuracy is measured on the holdout set after training and does not update the weights. ReLU, Leaky ReLU, and Softplus often achieve higher accuracy; Sigmoid and tanh can saturate; Identity has no nonlinearity.</p></section>}
             </section>
           </div>
         </>

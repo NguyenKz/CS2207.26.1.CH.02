@@ -270,7 +270,7 @@ const FreehandCanvas = memo(function FreehandCanvas({
       />
       <div className="predict-canvas-actions">
         <button className="button button-quiet" type="button" onClick={saveDrawing} disabled={drawing.every((value) => value === 0)}>
-          Lưu ảnh vẽ (PNG)
+          Save drawing (PNG)
         </button>
       </div>
     </>
@@ -626,9 +626,9 @@ export function PredictPanel(): ReactElement {
                 )}
               </div>
               <div className="predict-sample-actions">
-                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(-1)}>Mẫu trước</button>
-                <button className="button button-quiet" type="button" onClick={() => void handleRandomSample()}>Mẫu ngẫu nhiên</button>
-                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(1)}>Mẫu sau</button>
+                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(-1)}>Previous sample</button>
+                <button className="button button-quiet" type="button" onClick={() => void handleRandomSample()}>Random sample</button>
+                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(1)}>Next sample</button>
               </div>
               <div className="predict-control-actions">
                 <button className="button button-primary" type="button" onClick={() => void handlePredict()} disabled={status === "predicting"}>

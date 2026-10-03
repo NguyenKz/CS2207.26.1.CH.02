@@ -153,7 +153,7 @@ function StateMessage({
     <div className={`dataset-state ${error ? "dataset-state-error" : ""}`} role={error ? "alert" : undefined}>
       <strong>{title}</strong>
       <p>{detail}</p>
-      {onRetry && <button className="button button-quiet" type="button" onClick={onRetry}>Thử lại</button>}
+      {onRetry && <button className="button button-quiet" type="button" onClick={onRetry}>Retry</button>}
     </div>
   );
 }
@@ -208,7 +208,7 @@ function LoadMore({
   return (
     <div className="dataset-load-more">
       <button className="button button-quiet" type="button" onClick={onLoad} disabled={loading}>
-        {loading ? "Đang tải mẫu..." : "Load more samples"}
+        {loading ? "Loading more samples..." : "Load more samples"}
       </button>
       <div ref={sentinelRef} aria-hidden="true" />
     </div>
@@ -326,11 +326,11 @@ function PredictDatasetView(): ReactElement {
   }, [loadSamples]);
 
   if (metaError && !meta) {
-    return <StateMessage title="Không tải được dataset Predict" detail={metaError} error onRetry={() => { void loadMeta(); void loadSamples(true); }} />;
+    return <StateMessage title="Could not load the Predict dataset" detail={metaError} error onRetry={() => { void loadMeta(); void loadSamples(true); }} />;
   }
-  if (!meta) return <StateMessage title="Đang đọc dataset Predict..." detail="Chuẩn bị metadata và các mẫu đại diện." />;
+  if (!meta) return <StateMessage title="Reading the Predict dataset..." detail="Preparing metadata and representative samples." />;
 
-  const selectedLabel = selectedClass === null ? "tất cả class" : `class ${selectedClass}`;
+  const selectedLabel = selectedClass === null ? "all classes" : `class ${selectedClass}`;
   return (
     <div className="dataset-view">
       <section className="panel-surface dataset-overview-panel">
@@ -349,8 +349,8 @@ function PredictDatasetView(): ReactElement {
       <div className="dataset-predict-layout">
         <aside className="panel-surface dataset-class-filter-panel">
           <div className="section-heading compact">
-            <div><div className="section-kicker">FILTER BY CLASS</div><h2>Chọn class</h2></div>
-            <p>All hiển thị toàn bộ class; chọn một số để chỉ xem mẫu của class đó.</p>
+            <div><div className="section-kicker">FILTER BY CLASS</div><h2>Choose a class</h2></div>
+            <p>All shows every class. Choose a class to view only its samples.</p>
           </div>
           <ClassSelector counts={meta.class_counts} selectedClass={selectedClass} onSelect={setSelectedClass} />
         </aside>
@@ -359,8 +359,8 @@ function PredictDatasetView(): ReactElement {
           <section className="dataset-feature-grid">
             <div className="panel-surface dataset-contact-panel">
               <div className="section-heading compact">
-                <div><div className="section-kicker">ONE FROM EACH CLASS</div><h2>Nhìn nhanh cả bộ chữ số</h2></div>
-                <p>Chọn một class để mở danh sách dài.</p>
+                <div><div className="section-kicker">ONE FROM EACH CLASS</div><h2>Quick look at all digits</h2></div>
+                <p>Choose a class to open the full sample list.</p>
               </div>
               <div className="dataset-representative-grid">
                 {meta.representatives.map((sample) => (
@@ -382,27 +382,27 @@ function PredictDatasetView(): ReactElement {
                 <>
                   <PixelGrid pixels={selectedSample.pixels} label={`Selected digit ${selectedSample.label}`} />
                   <h2>Digit {selectedSample.label}</h2>
-                  <p>Test sample #{selectedSample.index}. Đây là ảnh {meta.dataset.input_shape[0]}×{meta.dataset.input_shape[1]} sau pipeline normalize, chính là input gửi vào model.</p>
-                  {meta.dataset.source_url && <a href={meta.dataset.source_url} target="_blank" rel="noreferrer">Nguồn MNIST</a>}
+                  <p>Test sample #{selectedSample.index}. This is the {meta.dataset.input_shape[0]}×{meta.dataset.input_shape[1]} image after normalization, exactly as it is sent to the model.</p>
+                  {meta.dataset.source_url && <a href={meta.dataset.source_url} target="_blank" rel="noreferrer">MNIST source</a>}
                 </>
-              ) : <p className="dataset-empty-copy">Chọn một mẫu để xem chi tiết.</p>}
+              ) : <p className="dataset-empty-copy">Choose a sample to inspect it.</p>}
             </div>
           </section>
 
           <section className="panel-surface dataset-browser-panel">
             <div className="section-heading compact">
-              <div><div className="section-kicker">SAMPLE BROWSER</div><h2>{formatCount(total)} mẫu trong {selectedLabel}</h2></div>
-              <p>Cuộn xuống để nạp thêm 40 mẫu.</p>
+              <div><div className="section-kicker">SAMPLE BROWSER</div><h2>{formatCount(total)} samples in {selectedLabel}</h2></div>
+              <p>Scroll to load 40 more samples.</p>
             </div>
-            {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Thử lại</button></div>}
-            {loading && !samples.length ? <StateMessage title="Đang tải mẫu..." detail="Chỉ tải một trang nhỏ để trang phản hồi nhanh." /> : samples.length ? (
+            {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Retry</button></div>}
+            {loading && !samples.length ? <StateMessage title="Loading samples..." detail="Only one small page loads at a time to keep the page responsive." /> : samples.length ? (
               <>
                 <div className="dataset-sample-grid">
                   {samples.map((sample) => <SampleTile key={sample.index} sample={sample} selected={selectedSample?.index === sample.index} onSelect={() => setSelectedSample(sample)} />)}
                 </div>
-                <LoadMore hasMore={hasMore} loading={loadingMore} onLoad={() => void loadSamples(false)} endLabel="Đã xem hết các mẫu trong bộ lọc này." />
+                <LoadMore hasMore={hasMore} loading={loadingMore} onLoad={() => void loadSamples(false)} endLabel="All filtered samples are shown." />
               </>
-            ) : <StateMessage title="Không có mẫu" detail="Bộ lọc hiện tại không trả về mẫu nào." />}
+            ) : <StateMessage title="No samples" detail="The current filter returned no samples." />}
           </section>
         </div>
       </div>
@@ -437,14 +437,14 @@ function ScatterPlot({
   const y = (value: number) => height - padding.bottom - ((value - yMin) / yRange) * (height - padding.top - padding.bottom);
   return (
     <div className="dataset-scatter-wrap">
-      <svg className="dataset-scatter" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${featureY} theo ${featureX} của dataset Train`}>
+      <svg className="dataset-scatter" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${featureY} by ${featureX} for the Train dataset`}>
         <line className="dataset-scatter-axis" x1={padding.left} y1={padding.top} x2={padding.left} y2={height - padding.bottom} />
         <line className="dataset-scatter-axis" x1={padding.left} y1={height - padding.bottom} x2={width - padding.right} y2={height - padding.bottom} />
         {visiblePoints.map((point) => <circle key={point.index} cx={x(point.x)} cy={y(point.y)} r="3.2" fill={CLASS_COLORS[point.label]} fillOpacity=".68"><title>{`class ${point.label} · ${point.split} · ${point.index}`}</title></circle>)}
         <text className="dataset-scatter-label" x={width / 2} y={height - 8} textAnchor="middle">{featureX}</text>
         <text className="dataset-scatter-label" x="14" y={height / 2} textAnchor="middle" transform={`rotate(-90 14 ${height / 2})`}>{featureY}</text>
       </svg>
-      {!visiblePoints.length && <p className="dataset-empty-copy">Bật ít nhất một class để xem scatter.</p>}
+      {!visiblePoints.length && <p className="dataset-empty-copy">Enable at least one class to view the scatter plot.</p>}
     </div>
   );
 }
@@ -543,9 +543,9 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
   }, [loadSamples]);
 
   if (previewError && !preview) {
-    return <StateMessage title="Không tải được dataset Train" detail={previewError} error onRetry={() => { void loadPreview(); void loadSamples(true); }} />;
+    return <StateMessage title="Could not load the Train dataset" detail={previewError} error onRetry={() => { void loadPreview(); void loadSamples(true); }} />;
   }
-  if (!preview) return <StateMessage title="Đang tái tạo dataset Train..." detail="Dữ liệu được sinh lại từ đúng cấu hình hiện tại của tab Train." />;
+  if (!preview) return <StateMessage title="Rebuilding the Train dataset..." detail="The data is regenerated from the current Train tab configuration." />;
 
   const toggleClass = (label: number): void => {
     setVisibleClasses((current) => {
@@ -568,7 +568,7 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
       <section className="panel-surface dataset-overview-panel">
         <div className="section-heading compact">
           <div><div className="section-kicker">TRAIN DATASET</div><h2>Generated classification data</h2></div>
-          <p>Preview được tái tạo từ cấu hình hiện tại của Train.</p>
+          <p>Preview regenerated from the current Train configuration.</p>
         </div>
         <div className="dataset-metric-grid">
           <Metric label="Total samples" value={formatCount(preview.sample_count)} />
@@ -591,7 +591,7 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
             <label>X axis<select value={featureX} onChange={(event) => setFeatureX(Number(event.target.value))}>{visibleFeatureNames.map((name, index) => <option key={name} value={index} disabled={index === featureY}>{name}</option>)}</select></label>
             <label>Y axis<select value={featureY} onChange={(event) => setFeatureY(Number(event.target.value))}>{visibleFeatureNames.map((name, index) => <option key={name} value={index} disabled={index === featureX}>{name}</option>)}</select></label>
           </div>
-          {previewLoading && <p className="dataset-loading-note">Đang cập nhật projection...</p>}
+          {previewLoading && <p className="dataset-loading-note">Updating projection...</p>}
           <ScatterPlot points={preview.points} visibleClasses={visibleClasses} featureX={visibleFeatureNames[featureX]} featureY={visibleFeatureNames[featureY]} />
           <div className="dataset-class-legend" aria-label="Toggle classes in scatter plot">
             {CLASS_LABELS.map((label) => <button key={label} className={visibleClasses.has(label) ? "is-visible" : "is-hidden"} type="button" aria-pressed={visibleClasses.has(label)} onClick={() => toggleClass(label)}><span style={{ backgroundColor: CLASS_COLORS[label] }} />class_{label}</button>)}
@@ -605,28 +605,28 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
               <p>class_{selectedSample.label} · {selectedSample.split}</p>
               <div className="dataset-vector-grid">{selectedSample.features.map((value, index) => <div key={index}><small>{preview.feature_names[index]}</small><code>{value.toFixed(3)}</code></div>)}</div>
             </>
-          ) : <p className="dataset-empty-copy">Chọn một dòng trong bảng để xem toàn bộ vector.</p>}
+          ) : <p className="dataset-empty-copy">Choose a row in the table to view the full vector.</p>}
         </div>
       </section>
 
       <section className="panel-surface dataset-browser-panel">
         <div className="section-heading compact">
-          <div><div className="section-kicker">SAMPLE TABLE</div><h2>{formatCount(total)} mẫu đang lọc</h2></div>
-          <p>Hiển thị một phần feature, detail giữ toàn bộ vector.</p>
+          <div><div className="section-kicker">SAMPLE TABLE</div><h2>{formatCount(total)} filtered samples</h2></div>
+          <p>Shows a subset of features. The detail panel keeps the full vector.</p>
         </div>
         <div className="dataset-table-filters">
           <label>Class<select value={classFilter ?? "all"} onChange={(event) => setClassFilter(event.target.value === "all" ? null : Number(event.target.value))}><option value="all">All classes</option>{CLASS_LABELS.map((label) => <option value={label} key={label}>class_{label}</option>)}</select></label>
           <label>Split<select value={splitFilter} onChange={(event) => setSplitFilter(event.target.value as SplitName)}>{splitLabels.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
         </div>
-        {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Thử lại</button></div>}
+        {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Retry</button></div>}
         {samples.length ? (
           <>
             <div className="dataset-table-wrap">
               <table className="dataset-sample-table"><thead><tr><th>Index</th><th>Class</th><th>Split</th>{previewColumns.map((name) => <th key={name}>{name}</th>)}</tr></thead><tbody>{samples.map((sample) => <tr key={sample.index} className={selectedSample?.index === sample.index ? "is-selected" : ""} tabIndex={0} onClick={() => setSelectedSample(sample)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedSample(sample); } }}><td>{sample.index}</td><td>class_{sample.label}</td><td>{sample.split}</td>{previewColumns.map((_name, index) => <td key={index}>{sample.features[index]?.toFixed(2)}</td>)}</tr>)}</tbody></table>
             </div>
-            <LoadMore hasMore={hasMore} loading={loadingMore} onLoad={() => void loadSamples(false)} endLabel="Đã xem hết các mẫu trong bộ lọc này." />
+            <LoadMore hasMore={hasMore} loading={loadingMore} onLoad={() => void loadSamples(false)} endLabel="All filtered samples are shown." />
           </>
-        ) : loadingMore ? <StateMessage title="Đang tải mẫu..." detail="Chuẩn bị trang đầu tiên." /> : <StateMessage title="Không có mẫu" detail="Bộ lọc hiện tại không trả về mẫu nào." />}
+        ) : loadingMore ? <StateMessage title="Loading samples..." detail="Preparing the first page." /> : <StateMessage title="No samples" detail="The current filter returned no samples." />}
       </section>
     </div>
   );

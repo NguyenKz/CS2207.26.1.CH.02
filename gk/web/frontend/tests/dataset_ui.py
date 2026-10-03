@@ -89,15 +89,15 @@ def test_error_and_empty_states(page: Page) -> None:
     page.wait_for_selector(".dataset-state-error")
     assert page.get_by_text("simulated dataset outage", exact=True).count() == 1
     page.unroute("**/dataset/predict/meta")
-    page.get_by_role("button", name="Thử lại").click()
+    page.get_by_role("button", name="Retry").click()
     page.wait_for_selector(".dataset-representative-grid")
 
     page.route("**/dataset/predict/samples**", lambda route: route.fulfill(status=200, content_type="application/json", body='{"items":[],"offset":0,"limit":40,"total":0,"has_more":false}'))
     page.reload()
     page.wait_for_load_state("networkidle")
     page.get_by_role("button", name="Dataset", exact=True).click()
-    page.get_by_text("Không có mẫu", exact=True).wait_for()
-    assert page.get_by_text("Không có mẫu", exact=True).count() == 1
+    page.get_by_text("No samples", exact=True).wait_for()
+    assert page.get_by_text("No samples", exact=True).count() == 1
 
 
 def main() -> None:
