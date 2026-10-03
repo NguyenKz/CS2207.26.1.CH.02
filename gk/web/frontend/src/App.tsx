@@ -355,38 +355,35 @@ function NetworkPipeline({
     },
     {
       number: "02",
-      title: "Weighted sum",
+      title: "Hidden layer",
       body: (
-        <PipelineSizeSelect
-          value={hiddenNeuronCount}
-          options={HIDDEN_NEURON_OPTIONS}
-          disabled={disabled}
-          ariaLabel="Hidden neuron count"
-          onChange={onHiddenNeuronCountChange}
-        />
+        <div className="pipeline-hidden-body">
+          <PipelineSizeSelect
+            value={hiddenNeuronCount}
+            options={HIDDEN_NEURON_OPTIONS}
+            disabled={disabled}
+            ariaLabel="Hidden neuron count"
+            onChange={onHiddenNeuronCountChange}
+          />
+          <code>W₁x + b₁ → f(·)</code>
+        </div>
       ),
-      note: "X @ W₁ + b₁",
+      note: "weighted sum → activation",
     },
     {
       number: "03",
-      title: "Activation",
-      body: <code className="pipeline-shape">(n, {hiddenNeuronCount})</code>,
-      note: "only f changes here",
-    },
-    {
-      number: "04",
       title: "Output",
       body: <code className="pipeline-shape">(n, {CLASS_COUNT})</code>,
       note: "softmax · 10 classes",
     },
     {
-      number: "05",
+      number: "04",
       title: "Loss",
       body: <code className="pipeline-shape">scalar</code>,
       note: "cross-entropy",
     },
     {
-      number: "06",
+      number: "05",
       title: "Update",
       body: <code className="pipeline-shape">weights</code>,
       note: "backprop + GD",
@@ -679,7 +676,7 @@ function App(): ReactElement {
 
               <section className="control-panel" aria-label="Training controls">
                 <label className="early-stopping-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span></label>
-                <label className="difficulty-field">Difficulty <output>{Math.round(runConfig.difficulty * 100)}%</output><input className="difficulty-range" type="range" min="0" max="100" step="1" value={Math.round(runConfig.difficulty * 100)} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, difficulty: Number(event.target.value) / 100 })} /><span className="difficulty-endpoints"><span>Easy</span><span>Hard</span></span><small>{difficultyDescription(runConfig.difficulty)}</small></label>
+                <label className="difficulty-field">Noise <output>{Math.round(runConfig.difficulty * 100)}%</output><input className="difficulty-range" type="range" min="0" max="100" step="1" value={Math.round(runConfig.difficulty * 100)} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, difficulty: Number(event.target.value) / 100 })} /><span className="difficulty-endpoints"><span>Easy</span><span>Hard</span></span><small>{difficultyDescription(runConfig.difficulty)}</small></label>
                 <div className="dataset-settings" aria-label="Dataset settings">
                   <label>Total<input type="number" min="30" max="10000" step="10" value={runConfig.sample_count} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, sample_count: Number(event.target.value) })} /></label>
                   <label>Train %<input type="number" min="1" max="98" value={runConfig.train_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, train_percentage: Number(event.target.value) })} /></label>

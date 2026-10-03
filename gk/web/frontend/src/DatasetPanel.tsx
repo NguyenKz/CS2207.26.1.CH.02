@@ -572,7 +572,7 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
           <Metric label="Total samples" value={formatCount(preview.sample_count)} />
           <Metric label="Classes" value={String(preview.class_count)} />
           <Metric label="Input features" value={String(preview.feature_names.length)} />
-          <Metric label="Difficulty" value={`${Math.round(trainConfig.difficulty * 100)}%`} />
+          <Metric label="Noise" value={`${Math.round(trainConfig.difficulty * 100)}%`} />
         </div>
         <div className="dataset-split-row">
           {Object.entries(preview.split_counts).map(([split, count]) => <span key={split}><strong>{formatCount(count)}</strong> {split}</span>)}
