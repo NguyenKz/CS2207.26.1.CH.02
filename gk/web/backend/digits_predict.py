@@ -185,7 +185,7 @@ def serialize_sample(artifact: dict[str, Any], index: int) -> dict[str, Any]:
     labels = np.asarray(artifact.get("test_labels"), dtype=int)
     if index < 0 or index >= len(samples):
         raise IndexError("Sample index is outside the digits dataset.")
-    pixels = samples[index].reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist()
+    pixels = samples[index].reshape(PIXEL_SIZE, PIXEL_SIZE).tolist()
     return {
         "index": index,
         "pixels": pixels,
@@ -319,7 +319,7 @@ def _normalize_source_image(image: np.ndarray) -> tuple[np.ndarray, dict[str, An
     resized_maximum = float(resized.max())
     if resized_maximum <= 0:
         raise ValueError("The source image does not contain a visible digit.")
-    normalized = np.rint(np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)).astype(float)
+    normalized = np.clip(resized / resized_maximum, 0.0, 1.0).astype(float)
     info = {
         "threshold": threshold,
         "bounding_box": {
@@ -330,7 +330,7 @@ def _normalize_source_image(image: np.ndarray) -> tuple[np.ndarray, dict[str, An
         },
         "cropped_size": [content_height, content_width],
         "square_size": int(square.shape[0]),
-        "normalized_pixels": normalized.astype(int).tolist(),
+        "normalized_pixels": normalized.tolist(),
     }
     return normalized, info
 
@@ -339,8 +339,8 @@ def preprocess_drawing(drawing: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]
     values = np.asarray(drawing, dtype=float).reshape(-1)
     if values.size != DRAWING_COUNT:
         raise ValueError(f"Expected {DRAWING_COUNT} drawing values.")
-    if not np.isfinite(values).all() or np.any(values < 0) or np.any(values > 16):
-        raise ValueError("Drawing values must be finite and between 0 and 16.")
+    if not np.isfinite(values).all() or np.any(values < 0) or np.any(values > 1):
+        raise ValueError("Drawing values must be finite and between 0 and 1.")
 
     image = values.reshape(DRAWING_SIZE, DRAWING_SIZE)
     normalized, info = _normalize_source_image(image)
@@ -413,8 +413,8 @@ def _predict_features(
     features = np.asarray(features, dtype=float).reshape(-1)
     if features.size != PIXEL_COUNT:
         raise ValueError(f"Expected {PIXEL_COUNT} pixel values.")
-    if not np.isfinite(features).all() or np.any(features < 0) or np.any(features > 16):
-        raise ValueError("Pixel values must be finite and between 0 and 16.")
+    if not np.isfinite(features).all() or np.any(features < 0) or np.any(features > 1):
+        raise ValueError("Pixel values must be finite and between 0 and 1.")
 
     true_label: int | None = None
     if sample_index is not None:
@@ -431,7 +431,7 @@ def _predict_features(
     normalized = (features - mean) / standard_deviation
     model_results = [_forward_model(model, normalized) for model in artifact["models"]]
     result = {
-        "pixels": features.reshape(PIXEL_SIZE, PIXEL_SIZE).astype(int).tolist(),
+        "pixels": features.reshape(PIXEL_SIZE, PIXEL_SIZE).tolist(),
         "features_normalized": [float(value) for value in normalized],
         "sample_index": sample_index,
         "true_label": true_label,
@@ -450,8 +450,8 @@ def predict_digits(
     raw_features = np.asarray(pixels, dtype=float).reshape(-1)
     if raw_features.size != PIXEL_COUNT:
         raise ValueError(f"Expected {PIXEL_COUNT} pixel values.")
-    if not np.isfinite(raw_features).all() or np.any(raw_features < 0) or np.any(raw_features > 16):
-        raise ValueError("Pixel values must be finite and between 0 and 16.")
+    if not np.isfinite(raw_features).all() or np.any(raw_features < 0) or np.any(raw_features > 1):
+        raise ValueError("Pixel values must be finite and between 0 and 1.")
     if sample_index is not None:
         samples = np.asarray(artifact.get("test_samples"), dtype=float)
         if sample_index < 0 or sample_index >= len(samples):

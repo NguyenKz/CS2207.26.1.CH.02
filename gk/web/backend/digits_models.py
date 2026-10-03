@@ -112,9 +112,10 @@ def build_mlp(
     configured_max_iter = MAX_ITER if max_iter is None else max_iter
     configured_early_stopping = EARLY_STOPPING if early_stopping is None else early_stopping
     configured_batch_size = BATCH_SIZE if batch_size is None else batch_size
+    sklearn_activation = 'logistic' if activation == 'sigmoid' else activation
     return MLPClassifier(
         hidden_layer_sizes=hidden_layers,
-        activation=activation,
+        activation=sklearn_activation,
         solver='adam',
         learning_rate_init=learning_rate_init,
         alpha=0.0001,

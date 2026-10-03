@@ -85,7 +85,7 @@ function formatInteger(value: number): string {
 }
 
 function flattenPixels(pixels: number[][]): number[] {
-  return pixels.flat().map((value) => Math.max(0, Math.min(16, Math.round(value))));
+  return pixels.flat().map((value) => Math.max(0, Math.min(1, value)));
 }
 
 function defaultPixels(pixelSize: number): number[] {
@@ -105,7 +105,7 @@ function sampleToDrawing(pixels: number[], pixelSize: number): number[] {
 }
 
 function normalizedColor(value: number): string {
-  const alpha = Math.max(0.04, value / 16);
+  const alpha = Math.max(0.04, Math.min(1, value));
   return `rgba(23, 32, 39, ${alpha})`;
 }
 
@@ -168,7 +168,7 @@ const FreehandCanvas = memo(function FreehandCanvas({
       if (value <= 0) continue;
       const x = index % DRAWING_SIZE;
       const y = Math.floor(index / DRAWING_SIZE);
-      context.fillStyle = `rgba(251, 250, 246, ${Math.max(0.08, value / 16)})`;
+      context.fillStyle = `rgba(251, 250, 246, ${Math.max(0.08, value)})`;
       context.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
     }
   }
@@ -196,7 +196,7 @@ const FreehandCanvas = memo(function FreehandCanvas({
     const point = getPoint(event);
     const previous = lastPointRef.current ?? point;
     context.strokeStyle = "#fbfaf6";
-    // Match MNIST stroke mass after 16×16 resize; width 11 made clean 9s look like 3/5.
+    // Match MNIST stroke mass after 28×28 normalization.
     context.lineWidth = 5;
     context.lineCap = "round";
     context.lineJoin = "round";
@@ -217,7 +217,7 @@ const FreehandCanvas = memo(function FreehandCanvas({
     const brightnessRange = strokeBrightness - backgroundBrightness;
     return Array.from({ length: DRAWING_COUNT }, (_, index) => {
       const brightness = (image[index * 4] + image[index * 4 + 1] + image[index * 4 + 2]) / 3;
-      return Math.round(Math.max(0, Math.min(16, (brightness - backgroundBrightness) / brightnessRange * 16)));
+      return Math.max(0, Math.min(1, (brightness - backgroundBrightness) / brightnessRange));
     });
   }
 

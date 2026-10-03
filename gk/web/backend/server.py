@@ -371,8 +371,8 @@ class PredictRequest(BaseModel):
         if value is not None:
             if len(value) != PIXEL_COUNT:
                 raise ValueError(f"pixels must contain exactly {PIXEL_COUNT} values")
-            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
-                raise ValueError("pixel values must be between 0 and 16")
+            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 1 for pixel in value):
+                raise ValueError("pixel values must be between 0 and 1")
         return value
 
     @field_validator("drawing")
@@ -381,8 +381,8 @@ class PredictRequest(BaseModel):
         if value is not None:
             if len(value) != DRAWING_COUNT:
                 raise ValueError(f"drawing must contain exactly {DRAWING_COUNT} values")
-            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 16 for pixel in value):
-                raise ValueError("drawing values must be finite and between 0 and 16")
+            if any(not np.isfinite(pixel) or pixel < 0 or pixel > 1 for pixel in value):
+                raise ValueError("drawing values must be finite and between 0 and 1")
         return value
 
     @model_validator(mode="after")

@@ -8,8 +8,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ARTIFACT_DIR = Path(__file__).with_name("artifacts")
-VALID_PIXEL_SIZES = (8, 16, 24)
-DEFAULT_PIXEL_SIZE = 8
+VALID_PIXEL_SIZES = (28,)
+DEFAULT_PIXEL_SIZE = 28
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -37,10 +37,10 @@ def _load_pixel_size() -> int:
         pixel_size = int(configured_value)
     except ValueError as error:
         raise ValueError(
-            "ANN_DIGIT_SIZE must be one of: 8, 16, 24."
+            "ANN_DIGIT_SIZE must be 28."
         ) from error
     if pixel_size not in VALID_PIXEL_SIZES:
-        raise ValueError("ANN_DIGIT_SIZE must be one of: 8, 16, 24.")
+        raise ValueError("ANN_DIGIT_SIZE must be 28.")
     return pixel_size
 
 
@@ -58,5 +58,5 @@ MODEL_ARTIFACT_PATH = ARTIFACT_DIR / f"digits_models_{SIZE_LABEL}.json"
 LEGACY_MODEL_ARTIFACT_PATH = ARTIFACT_DIR / "digits_models.json"
 # A fixed cap keeps the notebook practical on the augmented train set. This
 # is not early stopping; MLPs run until convergence or this explicit cap.
-MAX_ITER = 350
+MAX_ITER = 700
 EARLY_STOPPING :bool= _read_dotenv(PROJECT_ROOT / ".env").get("EARLY_STOPPING") in ("True", "true", "1", "yes", "y")

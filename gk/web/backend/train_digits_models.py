@@ -213,7 +213,7 @@ def main() -> None:
             "feature_count": PIXEL_COUNT,
             "class_count": CLASS_COUNT,
             "pixel_min": 0,
-            "pixel_max": 16,
+            "pixel_max": 1,
             "original_input_shape": [28, 28],
             "source_url": "https://yann.lecun.com/exdb/mnist/",
         },
@@ -222,7 +222,7 @@ def main() -> None:
             "feature_transform": (
                 f"denoise at 50% of max ink, keep largest component, crop foreground, "
                 f"resize to square, area-average resize to {PIXEL_SIZE}x{PIXEL_SIZE}, "
-                f"scale intensity to 0..16"
+                f"scale intensity to 0..1"
             ),
             "mean": scaler.mean_.astype(float).tolist(),
             "std": scaler.scale_.astype(float).tolist(),
@@ -230,7 +230,7 @@ def main() -> None:
         "fit_indices": train_indices.astype(int).tolist(),
         "validation_indices": validation_indices.astype(int).tolist(),
         "test_indices": np.arange(len(test_labels)).astype(int).tolist(),
-        "test_samples": np.rint(test_features).astype(int).tolist(),
+        "test_samples": test_features.astype(float).tolist(),
         "test_labels": test_labels.astype(int).tolist(),
         "demo_sample_index": demo_sample_index,
         "augmentation": {

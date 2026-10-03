@@ -83,37 +83,38 @@ MODEL_CONFIGS = {
         ],
         "C": 1.0,
         "solver": "lbfgs",
-        "max_iter": LOGISTIC_MAX_ITER,
+        "max_iter": MAX_ITER,
     },
-    "mlp_4_one_layer": {
+    "compact_sigmoid": {
         "kind": "ann",
         "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_SIZE // 2, "activation": "tanh"},
-            {"input": PIXEL_SIZE // 2, "output": CLASS_COUNT, "activation": "softmax"},
+            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "sigmoid"},
+            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "sigmoid"},
+            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
         ],
         "learning_rate_init": 0.001,
         "batch_size": BATCH_SIZE,
         "max_iter": MAX_ITER,
         "early_stopping": EARLY_STOPPING,
     },
-    "compact_tuned_1": {
+    "compact_tanh": {
         "kind": "ann",
         "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 2, "activation": "tanh"},
-            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "tanh"},
-            {"input": PIXEL_COUNT // 4, "output": CLASS_COUNT, "activation": "softmax"},
+            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "tanh"},
+            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "tanh"},
+            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
         ],
         "learning_rate_init": 0.002,
         "batch_size": BATCH_SIZE,
         "max_iter": MAX_ITER,
         "early_stopping": EARLY_STOPPING,
     },
-    "compact_tuned_2": {
+    "compact_relu": {
         "kind": "ann",
         "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 2, "activation": "relu"},
-            {"input": PIXEL_COUNT // 2, "output": PIXEL_COUNT // 4, "activation": "relu"},
-            {"input": PIXEL_COUNT // 4, "output": CLASS_COUNT, "activation": "softmax"},
+            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "relu"},
+            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "relu"},
+            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
         ],
         "learning_rate_init": 0.002,
         "batch_size": BATCH_SIZE,

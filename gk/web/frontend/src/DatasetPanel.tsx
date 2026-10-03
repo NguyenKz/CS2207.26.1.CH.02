@@ -4,7 +4,7 @@ import type { RunConfig } from "./App";
 
 const API_BASE = "http://localhost:6788";
 const PAGE_SIZE = 40;
-const PIXEL_MAX = 16;
+const PIXEL_MAX = 1;
 const CLASS_LABELS = Array.from({ length: 10 }, (_, index) => index);
 const CLASS_COLORS = ["#d05a45", "#2c7a7b", "#b7862c", "#6b5ca5", "#377d5f", "#435466", "#b05a82", "#668e9b", "#a16d3d", "#596b46"];
 

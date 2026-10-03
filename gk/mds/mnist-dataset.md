@@ -48,11 +48,11 @@ Nguồn gốc: [Yann LeCun](https://yann.lecun.com/exdb/mnist/)
 
 ```text
 MNIST / canvas → nhị phân + bỏ nhiễu → crop & căn giữa
-  → resize 16×16 → scale 0..16 → flatten → ANN
+  → resize 28×28 → scale 0..1 → flatten → ANN
 ```
 
-- **16×16**: gọn để train ANN. 16x16 thay vì dùng 28x28 như ảnh gốc vì nhóm muốn giảm số lượng tham số của mô hình lại.
-- **Thang mực 0→16**: Số 16 ở đây không có gì đặc biệt, chủ yếu là để dễ in logs và debug cũng như vẽ lên UI, có thể con 0-1, hoặc 0-255 hoặc 1 mức tùy chỉnh nào đó.
+- **28×28**: dùng đúng kích thước gốc của MNIST để hạn chế mất chi tiết nét chữ trước khi train ANN.
+- **Thang mực 0→1**: dùng float để giữ lại mức xám sau area-average resize.
 - **Augment nhẹ khi train**: dịch / xoay / nét → tổng quát hơn với nét tay thật
 
 ## Vì sao dùng MNIST?
@@ -61,4 +61,4 @@ Chuẩn, 10 lớp rõ, đủ lớn để học mà vẫn demo được với ANN
 
 # Data Flow
 
-> **MNIST 28×28 → chuẩn hóa, xóa vùng trống, resize 16×16 (cùng canvas) → train ANN → Predict nét vẽ tay.**
+> **MNIST 28×28 → chuẩn hóa, xóa vùng trống, resize 28×28 → train ANN → Predict nét vẽ tay.**

@@ -126,7 +126,7 @@ def _normalize_variant(image: np.ndarray, pixel_size: int) -> np.ndarray:
     square[top:top + height, left:left + width] = cropped
     resized = _resize_area_average(square, pixel_size, pixel_size)
     resized_maximum = float(resized.max())
-    return np.rint(np.clip(resized * (16.0 / resized_maximum), 0.0, 16.0)).astype(np.float32).reshape(-1)
+    return np.clip(resized / resized_maximum, 0.0, 1.0).astype(np.float32).reshape(-1)
 
 
 def _variant(
@@ -219,5 +219,5 @@ if __name__ == "__main__":
     batch = np.stack([digit, digit])
     variants = build_augmented_variants(batch, factor=3, seed=0)
     assert variants.shape == (4, PIXEL_COUNT)
-    assert np.all((variants >= 0) & (variants <= 16))
+    assert np.all((variants >= 0) & (variants <= 1))
     print("ok", variants.shape, float(variants.mean()))

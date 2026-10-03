@@ -37,14 +37,14 @@ Thư mục này chứa phần giải thích, lộ trình học và thiết kế 
 
 - [`demo-directions.md`](./demo-directions.md)
 - [`mnist_ann_training.ipynb`](./mnist_ann_training.ipynb): notebook tổng hợp đọc thư mục dataset local, minh họa và train bốn model Predict.
-- [`mnist_dataset.ipynb`](./mnist_dataset.ipynb): đọc `ANN_DIGIT_SIZE` từ `.env`, chạy một lần cho mỗi kích thước và xuất thư mục raw 28×28/normalized `N×N` cùng các file JSON.
+- [`mnist_dataset.ipynb`](./mnist_dataset.ipynb): đọc `ANN_DIGIT_SIZE=28` từ `.env` và xuất thư mục raw/normalized 28×28 cùng các file JSON.
 - [`mnist_train.ipynb`](./mnist_train.ipynb): đọc thư mục dataset, train bốn model và xuất file weight.
 - [`mnist_test.ipynb`](./mnist_test.ipynb): đọc weight, chọn mẫu test và kiểm tra prediction/probability.
 - [`mnist_models.ipynb`](./mnist_models.ipynb): đọc, kiểm tra cấu hình cố định và xuất `mnist_model_config.json` vào thư mục dataset.
 
 Cấu hình mặc định của bốn model và augmentation nằm ở [`../web/backend/model_config.py`](../web/backend/model_config.py). Sửa file này, chạy `mnist_models.ipynb` để ghi cấu hình, sau đó chạy `mnist_train.ipynb` để train và cập nhật artifact cho web.
 
-Kích thước ảnh hợp lệ là `8`, `16` hoặc `24`. Nếu không có `.env`, pipeline mặc định dùng `8×8`. Dataset nằm trong `gk/web/backend/artifacts/mnist_dataset/NxN/`, còn artifact model nằm ở `gk/web/backend/artifacts/digits_models_NxN.json`.
+Pipeline chỉ hỗ trợ kích thước gốc MNIST `28×28`. Nếu không có `.env`, pipeline mặc định dùng `28×28`. Dataset nằm trong `gk/web/backend/artifacts/mnist_dataset/28x28/`, còn artifact model nằm ở `gk/web/backend/artifacts/digits_models_28x28.json`.
 
 ## Nguồn PDF
 

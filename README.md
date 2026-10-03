@@ -80,7 +80,7 @@ Hoặc chạy cả backend và frontend bằng một lệnh:
 
 ## Tab Predict với chữ số viết tay theo kích thước cấu hình
 
-Tab `Predict` dùng ảnh chữ số viết tay thật từ MNIST. Kích thước normalized lấy từ biến `ANN_DIGIT_SIZE` trong `.env`, nhận `8`, `16` hoặc `24`, mặc định là `8`. Ảnh gốc 28×28 đi qua đúng pipeline của canvas: khử nhiễu theo 50% cường độ lớn nhất, giữ vùng nét lớn nhất, crop, vuông hóa, area-average resize về kích thước cấu hình, rồi mới dùng `StandardScaler`. Bốn model được train offline trên cùng một split dữ liệu và cùng `StandardScaler`:
+Tab `Predict` dùng ảnh chữ số viết tay thật từ MNIST ở kích thước gốc 28×28. `ANN_DIGIT_SIZE=28` là kích thước duy nhất được hỗ trợ. Pixel được chuẩn hóa về khoảng `0..1`. Ảnh đi qua đúng pipeline của canvas: khử nhiễu theo 50% cường độ lớn nhất, giữ vùng nét lớn nhất, crop, vuông hóa, area-average resize về 28×28, rồi mới dùng `StandardScaler`. Bốn model được train offline trên cùng một split dữ liệu và cùng `StandardScaler`:
 
 - `Logistic Regression`: baseline tuyến tính chính thức từ scikit-learn, `N*N → 10`.
 - MLP một hidden layer: `N*N → H → 10`, với `H = N//2` theo cấu hình mặc định.
@@ -100,24 +100,34 @@ cp .env.example .env
 Sau đó sửa, nếu cần:
 
 ```env
-ANN_DIGIT_SIZE=8
+ANN_DIGIT_SIZE=28
 ```
 
 Tạo lại artifact sau khi thay đổi script hoặc dependency:
 
 ```bash
-source .venv/bin/activate
-python -m gk.web.backend.train_digits_models
+./train_mnist.sh all
 ```
 
-Lệnh trên đọc dataset đã chuẩn bị cho kích thước đang cấu hình và ghi weight vào artifact tương ứng. Nếu dataset chưa tồn tại, hãy chạy `mnist_dataset.ipynb` trước. Dữ liệu gốc không được commit vào repository.
+Lệnh trên chạy bốn model bằng bốn process độc lập, rồi ghép thành artifact tương ứng. Mỗi model cũng có thể chạy riêng:
+
+```bash
+./train_mnist.sh logistic
+./train_mnist.sh compact_sigmoid
+./train_mnist.sh compact_tanh
+./train_mnist.sh compact_relu
+./train_mnist.sh merge
+```
+
+`merge` chỉ ghép lại các shard đã train trong `gk/web/backend/artifacts/mnist_dataset/28x28/model_shards/`. Nếu dataset chưa tồn tại, hãy chạy `mnist_dataset.ipynb` trước. Bốn process cùng lúc cần nhiều RAM hơn; log của chế độ `all` nằm trong thư mục `model_shards/logs/`. Dữ liệu gốc không được commit vào repository.
 
 Phần train được tách thành ba file để dễ chỉnh trong notebook hoặc chạy trực tiếp:
 
 - [`digits_dataset.py`](./gk/web/backend/digits_dataset.py): tải MNIST, đọc IDX và normalize ảnh theo pipeline của UI.
 - [`model_config.py`](./gk/web/backend/model_config.py): nguồn cấu hình duy nhất của Logistic Regression, hai ANN minh họa và ANN tuned.
 - [`digits_models.py`](./gk/web/backend/digits_models.py): factory scikit-learn, export layer và các helper dùng chung.
-- [`train_digits_models.py`](./gk/web/backend/train_digits_models.py): chia dữ liệu, fit scaler, train model, đánh giá và export artifact.
+- [`train_digits_models.py`](./gk/web/backend/train_digits_models.py): train tuần tự và export artifact đầy đủ.
+- [`train_digit_model.py`](./gk/web/backend/train_digit_model.py): train từng model, ghi shard và ghép artifact khi chạy song song.
 
 Notebook tổng hợp nhanh: [`mnist_ann_training.ipynb`](./gk/mds/mnist_ann_training.ipynb).
 
@@ -128,7 +138,7 @@ Ba notebook chuyên dụng nên chạy theo thứ tự:
 3. [`mnist_train.ipynb`](./gk/mds/mnist_train.ipynb): đọc thư mục dataset, train và ghi `mnist_weights.json` cùng `digits_models_NxN.json`.
 4. [`mnist_test.ipynb`](./gk/mds/mnist_test.ipynb): đọc file weight, chọn index và kiểm tra mẫu qua bốn model.
 
-Notebook train đọc ảnh `N×N` local rồi flatten thành `N*N` feature ngay trước khi đưa vào model. Đổi `ANN_DIGIT_SIZE` sẽ tạo hoặc sử dụng thư mục dataset và artifact riêng, không trộn weight giữa các kích thước.
+Notebook train đọc ảnh 28×28 local rồi flatten thành 784 feature ngay trước khi đưa vào model. Dataset và artifact của pipeline nằm riêng trong thư mục `28x28`.
 
 Muốn đổi kiến trúc, activation, learning rate, số vòng lặp hoặc augmentation, sửa [`model_config.py`](./gk/web/backend/model_config.py), chạy lại `mnist_models.ipynb`, rồi chạy `mnist_train.ipynb`. Các notebook sẽ hiển thị log loss, epoch, accuracy, confusion matrix và ghi artifact cho web; không cần chạy lệnh train bằng terminal.
 
