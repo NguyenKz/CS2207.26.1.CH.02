@@ -21,6 +21,7 @@
 .predict-shell {
   display: grid;
   gap: 16px;
+  align-content: start;
   min-width: 0;
 }
 
@@ -33,12 +34,12 @@
   display: flex;
   gap: 18px;
   align-items: center;
-  min-height: 48px;
+  min-height: 40px;
   border-bottom: 1px solid var(--line);
 }
 
 .predict-subtab {
-  min-height: 48px;
+  min-height: 40px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
@@ -224,12 +225,22 @@
   flex: 1 1 0;
 }
 
+.predict-secondary-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
+.predict-secondary-actions .button {
+  flex: 0 0 auto;
+}
+
 .predict-icon-button {
   display: inline-grid;
-  flex: 0 0 44px;
+  flex: 0 0 36px;
   place-items: center;
-  width: 44px;
-  min-height: 44px;
+  width: 36px;
+  min-height: 36px;
   padding: 0;
 }
 
@@ -248,6 +259,159 @@
   color: var(--muted);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.predict-insights {
+  min-width: 0;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.predict-insight-tabs {
+  display: flex;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.predict-insight-tab {
+  min-height: 34px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 7px 2px;
+  color: var(--muted);
+  cursor: pointer;
+  font: 500 9px var(--mono);
+  letter-spacing: .08em;
+}
+
+.predict-insight-tab.is-active,
+.predict-insight-tab:hover {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.predict-insight-tab:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.predict-insight-panel {
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.predict-insight-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.predict-insight-heading strong,
+.predict-insight-heading small {
+  display: block;
+}
+
+.predict-insight-heading strong {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.predict-insight-heading small {
+  color: var(--muted);
+  font: 9px var(--mono);
+  white-space: nowrap;
+}
+
+.predict-training-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.predict-training-grid > div {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  background: #f1ede5;
+}
+
+.predict-training-grid span,
+.predict-training-grid strong {
+  display: block;
+}
+
+.predict-training-grid span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.predict-training-grid strong {
+  margin-top: 3px;
+  font: 500 12px var(--mono);
+}
+
+.predict-benchmark-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.predict-benchmark-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(52px, .55fr));
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  background: #f1ede5;
+}
+
+.predict-benchmark-row.is-primary {
+  border-color: var(--accent);
+}
+
+.predict-benchmark-row > div {
+  min-width: 0;
+}
+
+.predict-benchmark-model strong,
+.predict-benchmark-model code,
+.predict-benchmark-row span,
+.predict-benchmark-row > div:not(.predict-benchmark-model) strong {
+  display: block;
+}
+
+.predict-benchmark-model strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+
+.predict-benchmark-model code {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  font: 8px var(--mono);
+}
+
+.predict-benchmark-row span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.predict-benchmark-row > div:not(.predict-benchmark-model) strong {
+  margin-top: 2px;
+  font: 500 10px var(--mono);
+  white-space: nowrap;
 }
 
 .predict-dataset-note {
@@ -814,6 +978,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  min-height: 0;
   max-height: min(420px, calc(100vh - 320px));
   margin-top: 0;
   overflow-y: scroll;
@@ -837,7 +1002,7 @@
 .dataset-class-button {
   display: grid;
   min-width: 0;
-  min-height: 52px;
+  min-height: 48px;
   align-content: center;
   gap: 3px;
   border: 1px solid var(--line);
@@ -1427,8 +1592,16 @@
   }
 
   .predict-control-actions .predict-icon-button {
-    width: 44px;
-    min-width: 44px;
+    width: 36px;
+    min-width: 36px;
+  }
+
+  .predict-secondary-actions {
+    gap: 4px;
+  }
+
+  .predict-secondary-actions .button {
+    width: auto;
   }
 }
 
@@ -1453,7 +1626,33 @@
   .app-shell:has(.predict-shell) .predict-shell {
     min-height: 0;
     height: calc(100vh - 58px);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell.is-dataset) .predict-shell {
+    height: auto;
+    grid-template-rows: auto auto;
+  }
+
+  .app-shell:has(.predict-shell.is-dataset) .dataset-browser-panel {
+    height: max(360px, calc(100vh - 200px));
+  }
+
+  .app-shell:has(.predict-shell.is-dataset) .dataset-predict-layout {
+    align-items: stretch;
+  }
+
+  .app-shell:has(.predict-shell.is-dataset) .dataset-class-filter-panel {
+    height: 100%;
+    box-sizing: border-box;
+  }
+
+  .app-shell:has(.predict-shell.is-dataset) .dataset-class-selector {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .app-shell:has(.predict-shell) .predict-hero .lesson-body {
@@ -1462,6 +1661,17 @@
 
   .app-shell:has(.predict-shell) .predict-hero h1 {
     font-size: 24px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-subtabs {
+    height: 36px;
+    min-height: 36px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-subtab {
+    min-height: 36px;
+    padding-top: 7px;
+    padding-bottom: 7px;
   }
 
   .app-shell:has(.predict-shell) .predict-layout {
@@ -1536,6 +1746,67 @@
 
   .app-shell:has(.predict-shell) .predict-control-actions {
     margin-top: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-secondary-actions {
+    gap: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-icon-button {
+    flex-basis: 30px;
+    width: 30px;
+    height: 24px;
+    min-height: 24px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-insights {
+    margin-top: 2px;
+    padding-top: 4px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-insight-tab {
+    min-height: 28px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-insight-panel {
+    margin-top: 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-insight-heading strong {
+    font-size: 10px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-insight-heading small {
+    font-size: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-list {
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-row {
+    gap: 5px;
+    padding: 5px 6px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-model strong {
+    font-size: 9px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-model code {
+    margin-top: 2px;
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-row span {
+    font-size: 7px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-benchmark-row > div:not(.predict-benchmark-model) strong {
+    font-size: 9px;
   }
 
   .app-shell:has(.predict-shell) .predict-input-note {

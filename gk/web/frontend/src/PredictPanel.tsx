@@ -35,6 +35,16 @@ type PredictMeta = {
   test_indices: number[];
   default_sample_index: number;
   primary_model_id: string | null;
+  training: {
+    fit_samples: number;
+    validation_samples: number;
+    test_samples: number;
+    total_samples: number;
+    augmented_fit_samples: number;
+    augmentation_factor: number;
+    epochs: number;
+    batch_size: number;
+  };
   models: ModelMeta[];
 };
 
@@ -355,6 +365,74 @@ function ModelCard({
   );
 }
 
+function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
+  const [activeTab, setActiveTab] = useState<"training" | "benchmark">("training");
+  const training = meta.training;
+
+  return (
+    <section className="predict-insights" aria-label="Training and benchmark details">
+      <nav className="predict-insight-tabs" role="tablist" aria-label="Prediction details">
+        {(["training", "benchmark"] as const).map((tab) => (
+          <button
+            key={tab}
+            className={`predict-insight-tab ${activeTab === tab ? "is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`predict-insight-${tab}`}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === "training" ? "TRAINING" : "BENCHMARK"}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "training" ? (
+        <div id="predict-insight-training" className="predict-insight-panel" role="tabpanel">
+          <div className="predict-insight-heading">
+            <div>
+              <span className="section-kicker">TRAINING RUN</span>
+              <strong>MNIST 28×28 model set</strong>
+            </div>
+            <small>{training.augmentation_factor}× augmentation</small>
+          </div>
+          <div className="predict-training-grid">
+            <div><span>Train</span><strong>{formatInteger(training.fit_samples)}</strong></div>
+            <div><span>Validation</span><strong>{formatInteger(training.validation_samples)}</strong></div>
+            <div><span>Test</span><strong>{formatInteger(training.test_samples)}</strong></div>
+            <div><span>Total</span><strong>{formatInteger(training.total_samples)}</strong></div>
+            <div><span>Epochs / max iter</span><strong>{formatInteger(training.epochs)}</strong></div>
+            <div><span>Batch size</span><strong>{formatInteger(training.batch_size)}</strong></div>
+          </div>
+        </div>
+      ) : (
+        <div id="predict-insight-benchmark" className="predict-insight-panel" role="tabpanel">
+          <div className="predict-insight-heading">
+            <div>
+              <span className="section-kicker">MODEL BENCHMARK</span>
+              <strong>Validation and test accuracy</strong>
+            </div>
+            <small>higher is better</small>
+          </div>
+          <div className="predict-benchmark-list">
+            {meta.models.map((model) => (
+              <div className={`predict-benchmark-row ${meta.primary_model_id === model.id ? "is-primary" : ""}`} key={model.id}>
+                <div className="predict-benchmark-model">
+                  <strong>{model.name}</strong>
+                  <code>{model.architecture.join(" → ")}</code>
+                </div>
+                <div><span>Val</span><strong>{formatPercent(model.validation_accuracy)}</strong></div>
+                <div><span>Test</span><strong>{formatPercent(model.test_accuracy)}</strong></div>
+                <div><span>Params</span><strong>{formatInteger(model.parameter_count)}</strong></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ActivationStrip({ layer, values = layer.h }: { layer: LayerTrace; values?: number[] }): ReactElement {
   const maxAbs = Math.max(...values.map((value) => Math.abs(value)), 1);
   return (
@@ -548,7 +626,7 @@ export function PredictPanel(): ReactElement {
   }
 
   return (
-    <div className="predict-shell">
+    <div className={`predict-shell ${activeDemoTab === "dataset" ? "is-dataset" : ""}`}>
       <nav className="predict-subtabs" role="tablist" aria-label="Demo views">
         <button
           id="demo-tab-prediction"
@@ -606,7 +684,6 @@ export function PredictPanel(): ReactElement {
               <div className="section-heading compact">
                 <div>
                   <div className="section-kicker">INPUT CANVAS</div>
-                  <h2>One handwritten digit</h2>
                 </div>
                 <p>{displayLabel}</p>
               </div>
@@ -645,6 +722,7 @@ export function PredictPanel(): ReactElement {
                 </button>
               </div>
               <p className="predict-input-note">Draw freely. The backend removes noise, crops the ink, squares it and resizes it to {pixelSize}×{pixelSize} before prediction.</p>
+              <PredictInsights meta={meta} />
             </section>
           </aside>
 

@@ -32,7 +32,7 @@ from .dataset_images import (
     load_dataset_catalog,
     public_dataset_item,
 )
-from .digits_config import DATASET_META_PATH, PIXEL_SIZE
+from .digits_config import DATASET_META_PATH, MAX_ITER, PIXEL_SIZE
 from .digits_predict import (
     DRAWING_COUNT,
     DigitsArtifactError,
@@ -44,6 +44,7 @@ from .digits_predict import (
     public_model_metadata,
     serialize_sample,
 )
+from .model_config import BATCH_SIZE
 
 app = FastAPI(title="ANN Training Lab")
 app.add_middleware(
@@ -506,6 +507,10 @@ def _train_scatter_points(
 @app.get("/predict/meta")
 async def predict_meta() -> dict[str, Any]:
     artifact = _get_digits_artifact()
+    fit_samples = len(artifact.get("fit_indices", []))
+    validation_samples = len(artifact.get("validation_indices", []))
+    test_samples = len(artifact.get("test_indices", []))
+    augmentation = artifact.get("augmentation", {})
     return {
         "ready": True,
         "dataset": artifact["dataset"],
@@ -513,6 +518,16 @@ async def predict_meta() -> dict[str, Any]:
         "test_indices": get_test_indices(artifact),
         "default_sample_index": int(artifact.get("demo_sample_index", get_test_indices(artifact)[0])),
         "primary_model_id": artifact.get("primary_model_id"),
+        "training": {
+            "fit_samples": fit_samples,
+            "validation_samples": validation_samples,
+            "test_samples": test_samples,
+            "total_samples": fit_samples + validation_samples + test_samples,
+            "augmented_fit_samples": int(augmentation.get("generated_count", fit_samples)),
+            "augmentation_factor": int(augmentation.get("factor", 1)),
+            "epochs": MAX_ITER,
+            "batch_size": BATCH_SIZE,
+        },
         "models": public_model_metadata(artifact),
     }
 

@@ -352,7 +352,6 @@ export function PredictDatasetView(): ReactElement {
           <section ref={browserPanelRef} className="panel-surface dataset-browser-panel">
             <div className="section-heading compact">
               <div><div className="section-kicker">SAMPLE BROWSER</div><h2>{formatCount(total)} samples in {selectedLabel}</h2></div>
-              <p>Scroll to load {PAGE_SIZE} more samples.</p>
             </div>
             {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Retry</button></div>}
             {loading && !samples.length ? <StateMessage title="Loading samples..." detail="Only one small page loads at a time to keep the page responsive." /> : samples.length ? (

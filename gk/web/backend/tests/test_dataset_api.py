@@ -37,6 +37,19 @@ def test_predict_dataset_metadata_and_class_page() -> None:
     assert body["split_counts"] == {"training": 48000, "validation": 12000, "testing": 10000}
     assert len(body["representatives"]) == 10
 
+    predict_meta = client.get("/predict/meta")
+    assert predict_meta.status_code == 200
+    assert predict_meta.json()["training"] == {
+        "fit_samples": 48000,
+        "validation_samples": 12000,
+        "test_samples": 10000,
+        "total_samples": 70000,
+        "augmented_fit_samples": 240000,
+        "augmentation_factor": 5,
+        "epochs": 700,
+        "batch_size": 256,
+    }
+
     page = client.get("/dataset/predict/samples", params={"label": 7, "limit": 40})
     assert page.status_code == 200
     page_body = page.json()
