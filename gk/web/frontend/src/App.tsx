@@ -116,13 +116,12 @@ const ACTIVATION_LABELS: Record<ActivationName, string> = {
   identity: "Identity",
 };
 
-/** One-line teaching cue: formula + what to watch while curves move. */
-const ACTIVATION_CUES: Record<ActivationName, { formula: string; watch: string }> = {
-  tanh: { formula: "tanh(z)", watch: "symmetric · can saturate" },
-  sigmoid: { formula: "σ(z)", watch: "0 to 1 · saturates early" },
-  relu: { formula: "max(0, z)", watch: "fast · negative inputs become 0" },
-  leaky_relu: { formula: "max(αz, z)", watch: "ReLU with a small negative gradient" },
-  identity: { formula: "z", watch: "no nonlinearity" },
+const ACTIVATION_CUES: Record<ActivationName, string> = {
+  tanh: "tanh(z)",
+  sigmoid: "σ(z)",
+  relu: "max(0, z)",
+  leaky_relu: "max(αz, z)",
+  identity: "z",
 };
 
 const ACTIVATION_COLORS: Record<ActivationName, string> = {
@@ -437,8 +436,7 @@ function ActivationCard({
         <StatusMark status={metric.status} />
       </div>
       <p className="activation-cue">
-        <code>{cue.formula}</code>
-        <span>{cue.watch}</span>
+        <code>{cue}</code>
       </p>
       <div className="progress-track" aria-label={`${ACTIVATION_LABELS[activation]} progress`}>
         <span style={{ width: `${progress}%`, backgroundColor: ACTIVATION_COLORS[activation] }} />
@@ -684,7 +682,6 @@ function App(): ReactElement {
 
           <div className="training-stage">
             <section className="section-block" aria-labelledby="lanes-title">
-              <div className="section-heading"><div><div className="section-kicker">ACTIVATION COMPARISON</div></div></div>
               <div className="activation-grid">
                 {ACTIVATIONS.map((activation) => <ActivationCard key={activation} activation={activation} metric={metrics[activation]} history={histories[activation]} />)}
               </div>
