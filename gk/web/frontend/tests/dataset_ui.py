@@ -40,7 +40,7 @@ def test_review_tab(page: Page) -> None:
     page.get_by_role("button", name="Demo", exact=True).click()
     assert page.get_by_role("tab", name="PREDICTION BOARD", exact=True).count() == 1
     assert page.get_by_role("tab", name="DATASET", exact=True).count() == 1
-    page.get_by_role("button", name="Review", exact=True).click()
+    page.get_by_role("button", name="Overview", exact=True).click()
     assert page.locator(".activation-card").count() == 5
     assert page.get_by_text("Total parameters", exact=True).count() == 1
     assert "Softplus" not in page.locator("body").inner_text()
@@ -64,7 +64,7 @@ def test_review_training(page: Page) -> None:
     page.set_default_timeout(30_000)
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="Review", exact=True).click()
+    page.get_by_role("button", name="Overview", exact=True).click()
     page.get_by_label("Total", exact=True).fill("100")
     page.get_by_label("Epochs", exact=True).fill("1")
     page.get_by_role("button", name="Start training", exact=True).click()

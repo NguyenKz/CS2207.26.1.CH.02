@@ -339,7 +339,7 @@ export function PredictDatasetView(): ReactElement {
         <div className="dataset-metric-grid dataset-predict-metric-grid">
           <Metric label="All samples" value={formatCount(meta.dataset.sample_count)} />
           <Metric label="Classes" value={String(meta.dataset.class_count)} />
-          <Metric label="Model input" value={`${meta.dataset.input_shape[0]}×${meta.dataset.input_shape[1]}`} />
+          <Metric label="Image size" value={`${meta.dataset.input_shape[0]}×${meta.dataset.input_shape[1]}`} />
         </div>
       </section>
 

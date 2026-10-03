@@ -342,17 +342,13 @@ function ModelCard({
           {formatInteger(model.parameter_count)} parameters · test {formatPercent(model.test_accuracy)}
         </span>
       </button>
-      <div className="predict-model-result">
+      <div className={`predict-model-result ${isCorrect === true ? "is-correct" : isCorrect === false ? "is-wrong" : ""}`}>
         {result ? (
           <>
             <div className="predict-model-prediction">
-              <span>Predicted digit</span>
               <strong>{result.predicted_class}</strong>
               <code>{formatPercent(result.confidence)}</code>
             </div>
-            <span className={`predict-verdict verdict-${isCorrect === true ? "correct" : isCorrect === false ? "wrong" : "custom"}`}>
-              {isCorrect === true ? "Correct on this sample" : isCorrect === false ? "Different from label" : "Custom input"}
-            </span>
             <ProbabilityBars probabilities={result.probabilities} compact />
           </>
         ) : (
@@ -674,7 +670,7 @@ export function PredictPanel(): ReactElement {
                 <div>
                   <div className="section-kicker">INPUT CANVAS</div>
                 </div>
-                <p>{displayLabel}</p>
+                <p className="predict-input-label">{displayLabel}</p>
               </div>
               <div className="predict-pixel-frame">
                 <FreehandCanvas ref={canvasControlRef} drawing={drawing} onCommit={commitDrawing} downloadName={drawingFileName} />
@@ -720,15 +716,6 @@ export function PredictPanel(): ReactElement {
                   <div className="section-kicker">PREDICTION BOARD</div>
                 </div>
                 <p>{result ? `Predicted from ${result.sample_index == null ? "custom pixels" : `test sample ${result.sample_index}`}` : "Choose a sample, then run one forward pass."}</p>
-              </div>
-              <div className="predict-pipeline" aria-label="Prediction pipeline">
-                {result?.preprocessing ? (
-                  <>
-                    <span>128×128 ink</span><b>→</b><span>denoise</span><b>→</b><span>crop</span><b>→</b><span>square</span><b>→</b><span>resize {pixelSize}×{pixelSize}</span><b>→</b><span>{pixelSize * pixelSize} features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span>
-                  </>
-                ) : (
-                  <><span>{pixelSize}×{pixelSize} pixels</span><b>→</b><span>{pixelSize * pixelSize} features</span><b>→</b><span>4 models</span><b>→</b><span>10 probabilities</span></>
-                )}
               </div>
               <div className="predict-model-grid">
                 {meta.models.map((model) => {

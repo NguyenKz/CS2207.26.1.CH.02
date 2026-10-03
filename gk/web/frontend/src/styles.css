@@ -261,6 +261,12 @@
   line-height: 1.45;
 }
 
+.predict-input-label {
+  color: var(--ink) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+}
+
 .predict-insights {
   min-width: 0;
   margin-top: 16px;
@@ -443,27 +449,6 @@
   font: 10px var(--mono);
 }
 
-.predict-pipeline {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  font: 10px var(--mono);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.predict-pipeline b {
-  color: var(--accent);
-  font-size: 15px;
-  font-weight: 400;
-}
-
 .predict-model-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -541,38 +526,34 @@
   padding: 10px 12px 12px;
 }
 
-.predict-model-prediction {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 2px 8px;
+.predict-model-result.is-correct {
+  background: #edf7f0;
 }
 
-.predict-model-prediction span {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 10px;
+.predict-model-result.is-wrong {
+  background: #fff0ee;
+}
+
+.predict-model-prediction {
+  position: relative;
+  display: block;
+  text-align: center;
 }
 
 .predict-model-prediction strong {
-  font-size: 29px;
+  display: block;
+  margin-top: 2px;
+  font-size: 32px;
   line-height: 1;
 }
 
 .predict-model-prediction code {
+  position: absolute;
+  right: 0;
+  bottom: 0;
   color: var(--teal);
   font: 10px var(--mono);
 }
-
-.predict-verdict {
-  display: inline-block;
-  margin-top: 8px;
-  font: 9px var(--mono);
-}
-
-.verdict-correct { color: #377d5f; }
-.verdict-wrong { color: #a33e31; }
-.verdict-custom { color: var(--muted); }
 
 .predict-model-empty,
 .predict-explanation {
@@ -1551,16 +1532,6 @@
     grid-template-columns: 1fr;
   }
 
-  .predict-pipeline {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .predict-pipeline b {
-    transform: rotate(90deg);
-    margin: -2px 0 -2px 4px;
-  }
-
   .predict-forward-flow {
     display: grid;
     grid-template-columns: 1fr;
@@ -1816,6 +1787,10 @@
     line-height: 1.25;
   }
 
+  .app-shell:has(.predict-shell) .predict-input-label {
+    font-size: 11px !important;
+  }
+
   .app-shell:has(.predict-shell) .predict-dataset-note {
     padding: 7px 2px 0;
   }
@@ -1852,17 +1827,6 @@
     font-size: 8px;
   }
 
-  .app-shell:has(.predict-shell) .predict-pipeline {
-    gap: 5px;
-    margin: 6px 0;
-    padding: 6px 8px;
-    font-size: 8px;
-  }
-
-  .app-shell:has(.predict-shell) .predict-pipeline b {
-    font-size: 11px;
-  }
-
   .app-shell:has(.predict-shell) .predict-model-grid {
     gap: 5px;
     min-height: 0;
@@ -1892,13 +1856,8 @@
     padding: 6px 7px 7px;
   }
 
-  .app-shell:has(.predict-shell) .predict-model-prediction span,
-  .app-shell:has(.predict-shell) .predict-verdict {
-    font-size: 7px;
-  }
-
   .app-shell:has(.predict-shell) .predict-model-prediction strong {
-    font-size: 22px;
+    font-size: 26px;
   }
 
   .app-shell:has(.predict-shell) .predict-model-prediction code {
@@ -1907,10 +1866,6 @@
 
   .app-shell:has(.predict-shell) .predict-model-meta {
     font-size: 10px;
-  }
-
-  .app-shell:has(.predict-shell) .predict-verdict {
-    margin-top: 4px;
   }
 
   .app-shell:has(.predict-shell) .predict-probability-bars.is-compact {

@@ -613,7 +613,7 @@ function App(): ReactElement {
       <header className="topbar app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ANN</div>
-          <div><strong>Training Lab</strong><span>ANN from scratch · review · demo</span></div>
+          <div><strong>Training Lab</strong><span>ANN from scratch · overview · demo</span></div>
         </div>
         <nav className="tabs" aria-label="Demo sections">
           <button
@@ -621,7 +621,7 @@ function App(): ReactElement {
             type="button"
             onClick={() => setActiveTab("train")}
           >
-            Review
+            Overview
           </button>
           <button
             className={`tab ${activeTab === "predict" ? "tab-active" : ""}`}
@@ -642,11 +642,11 @@ function App(): ReactElement {
             <div className="lesson-body">
               <div className="lesson-intro">
                 <div className="lesson-copy">
-                  <div className="section-kicker">ANN REVIEW</div>
-                  <h1>ANN Review</h1>
+                  <div className="section-kicker">ANN OVERVIEW</div>
+                  <h1>ANN Overview</h1>
                   <span className="review-status"><span className="status-mark" aria-hidden="true" />{statusText}</span>
                   <p className="intro-copy">
-                    Review the key parts of an ANN: inputs, hidden layers, activations, loss, and weight updates.
+                    Explore the key parts of an ANN: inputs, hidden layers, activations, loss, and weight updates.
                   </p>
                 </div>
               </div>
@@ -684,14 +684,14 @@ function App(): ReactElement {
 
           <div className="training-stage">
             <section className="section-block" aria-labelledby="lanes-title">
-              <div className="section-heading"><div><div className="section-kicker">ACTIVATION COMPARISON</div><h2 id="lanes-title">Five functions, one starting point</h2></div><p>Compare the shape, loss, and validation accuracy.</p></div>
+              <div className="section-heading"><div><div className="section-kicker">ACTIVATION COMPARISON</div></div></div>
               <div className="activation-grid">
                 {ACTIVATIONS.map((activation) => <ActivationCard key={activation} activation={activation} metric={metrics[activation]} history={histories[activation]} />)}
               </div>
             </section>
 
             <section className="lower-grid">
-              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curve drops first?</h2></div><p>Click a name to hide or show it. Try ReLU vs Sigmoid, then Identity vs the rest.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
+              <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div></div><p>Click a name to hide or show it. Try ReLU vs Sigmoid, then Identity vs the rest.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
               {summary && <section className="summary-panel panel-surface" aria-label="Run summary"><div className="section-kicker">RUN SUMMARY</div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>test acc <b>{formatAccuracy(result.test_accuracy)}</b></span></div>)}</div><p className="summary-note">Accuracy matters more than loss for classification. Test accuracy is measured after training. ReLU and Leaky ReLU often learn quickly; Sigmoid and tanh can saturate; Identity has no nonlinearity.</p></section>}
             </section>
           </div>
