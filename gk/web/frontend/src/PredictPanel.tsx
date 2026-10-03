@@ -312,13 +312,11 @@ function ProbabilityBars({ probabilities, compact = false }: { probabilities: nu
 function ModelCard({
   model,
   trueLabel,
-  primary,
   selected,
   onSelect,
 }: {
   model: ModelResult | ModelMeta;
   trueLabel: number | null;
-  primary: boolean;
   selected: boolean;
   onSelect: () => void;
 }): ReactElement {
@@ -334,8 +332,8 @@ function ModelCard({
         onClick={onSelect}
       >
         <span className="predict-model-topline">
-          <span className="section-kicker">{model.kind === "linear" ? "BASELINE" : "ANN MODEL"}</span>
-          <span className="predict-model-state">{primary ? "Primary" : selected ? "Selected" : "Inspect"}</span>
+          {model.kind === "ann" && <span className="section-kicker">ANN MODEL</span>}
+          <span className="predict-model-state">{selected ? "Selected" : "Inspect"}</span>
         </span>
         <strong>{model.name}</strong>
         {model.source && <small className="predict-baseline-source">Official scikit-learn baseline</small>}
@@ -368,6 +366,10 @@ function ModelCard({
 function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
   const [activeTab, setActiveTab] = useState<"training" | "benchmark">("training");
   const training = meta.training;
+  const benchmarkModels = [...meta.models].sort((left, right) =>
+    (right.validation_accuracy ?? -1) - (left.validation_accuracy ?? -1)
+    || right.test_accuracy - left.test_accuracy,
+  );
 
   return (
     <section className="predict-insights" aria-label="Training and benchmark details">
@@ -394,14 +396,13 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
               <span className="section-kicker">TRAINING RUN</span>
               <strong>MNIST 28×28 model set</strong>
             </div>
-            <small>{training.augmentation_factor}× augmentation</small>
           </div>
           <div className="predict-training-grid">
             <div><span>Train</span><strong>{formatInteger(training.fit_samples)}</strong></div>
             <div><span>Validation</span><strong>{formatInteger(training.validation_samples)}</strong></div>
             <div><span>Test</span><strong>{formatInteger(training.test_samples)}</strong></div>
             <div><span>Total</span><strong>{formatInteger(training.total_samples)}</strong></div>
-            <div><span>Epochs / max iter</span><strong>{formatInteger(training.epochs)}</strong></div>
+            <div><span>Epochs</span><strong>{formatInteger(training.epochs)}</strong></div>
             <div><span>Batch size</span><strong>{formatInteger(training.batch_size)}</strong></div>
           </div>
         </div>
@@ -415,7 +416,7 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
             <small>higher is better</small>
           </div>
           <div className="predict-benchmark-list">
-            {meta.models.map((model) => (
+            {benchmarkModels.map((model) => (
               <div className={`predict-benchmark-row ${meta.primary_model_id === model.id ? "is-primary" : ""}`} key={model.id}>
                 <div className="predict-benchmark-model">
                   <strong>{model.name}</strong>
@@ -546,18 +547,6 @@ export function PredictPanel(): ReactElement {
       predictionSequenceRef.current += 1;
     };
   }, [drawing, sampleIndex]);
-
-  async function selectSampleByOffset(offset: number): Promise<void> {
-    if (!meta?.test_indices.length) return;
-    const currentPosition = sampleIndex == null ? 0 : Math.max(0, meta.test_indices.indexOf(sampleIndex));
-    const nextPosition = (currentPosition + offset + meta.test_indices.length) % meta.test_indices.length;
-    try {
-      await fetchSample(meta.test_indices[nextPosition]);
-    } catch (error) {
-      setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    }
-  }
 
   async function handleRandomSample(): Promise<void> {
     if (!meta?.test_indices.length) return;
@@ -699,9 +688,7 @@ export function PredictPanel(): ReactElement {
                 )}
               </div>
               <div className="predict-sample-actions">
-                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(-1)}>Previous sample</button>
                 <button className="button button-quiet" type="button" onClick={() => void handleRandomSample()}>Random sample</button>
-                <button className="button button-quiet" type="button" onClick={() => void selectSampleByOffset(1)}>Next sample</button>
               </div>
               <div className="predict-control-actions">
                 <button className="button button-primary" type="button" onClick={() => void handlePredict()} disabled={status === "predicting"}>
@@ -751,7 +738,6 @@ export function PredictPanel(): ReactElement {
                       key={model.id}
                       model={resultModel ?? model}
                       trueLabel={result?.true_label ?? sampleLabel}
-                      primary={meta.primary_model_id === model.id}
                       selected={selectedModelId === model.id}
                       onSelect={() => setSelectedModelId(model.id)}
                     />
