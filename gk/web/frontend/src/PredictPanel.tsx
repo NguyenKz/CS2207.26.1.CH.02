@@ -390,7 +390,7 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
           <div className="predict-insight-heading">
             <div>
               <span className="section-kicker">TRAINING RUN</span>
-              <strong>MNIST 28×28 model set</strong>
+              <strong>MNIST Dataset</strong>
             </div>
           </div>
           <div className="predict-training-grid">
@@ -406,7 +406,7 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
         <div id="predict-insight-benchmark" className="predict-insight-panel" role="tabpanel">
           <div className="predict-insight-heading">
             <div>
-              <span className="section-kicker">MODEL BENCHMARK</span>
+              <span className="section-kicker">COMPARERATION</span>
               <strong>Validation and test accuracy</strong>
             </div>
             <small>higher is better</small>
