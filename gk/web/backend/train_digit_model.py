@@ -1,12 +1,14 @@
-"""Train one MNIST model and merge per-model artifacts."""
+"""Train one MNIST model, snapshot a run, and manage the model registry."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
+import shutil
 import time
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -16,17 +18,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from .digits_augmentation import build_augmented_variants, repeat_labels
-from .digits_config import (
-    DATASET_DIR,
-    DATASET_PATH,
-    MODEL_ARTIFACT_PATH,
-    PIXEL_SIZE,
-    RAW_DATASET_PATH,
-)
+from .digits_config import DATASET_PATH, PIXEL_SIZE, RAW_DATASET_PATH
 from .digits_models import (
     CLASS_COUNT,
     LOGISTIC_CANDIDATES,
-    MODEL_CONFIGS,
     PIXEL_COUNT,
     RANDOM_SEED,
     SEARCH_ROUNDS,
@@ -43,15 +38,24 @@ from .model_config import (
     AUGMENT_SHIFT_PIXELS,
     AUGMENT_STROKE_VARIANTS,
     AUGMENT_TRAINING,
+    MODEL_CONFIG_SOURCE_PATH,
     architecture_sizes,
     hidden_activation,
     hidden_layer_sizes,
     layer_activations,
+    load_model_configs,
+)
+from .model_registry import (
+    current_dataset_metadata,
+    list_runs,
+    register_run,
+    relative_project_path,
+    run_directory,
+    select_run,
 )
 
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [pid=%(process)d] %(message)s",
@@ -59,8 +63,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MODEL_IDS = tuple(MODEL_CONFIGS)
-SHARD_DIR = DATASET_DIR / "model_shards"
+
+def _ann_display_name(config: dict[str, Any]) -> str:
+    hidden = hidden_layer_sizes(config)
+    activation = hidden_activation(config)
+    if len(hidden) == 1:
+        return f"MLP · {hidden[0]} · {activation}"
+    return f"MLP · {'×'.join(str(size) for size in hidden)} · {activation}"
 
 
 def _prepare_data() -> dict[str, Any]:
@@ -151,12 +160,15 @@ def _prepare_data() -> dict[str, Any]:
     }
 
 
-def _tune_logistic(data: dict[str, Any]) -> tuple[float, float]:
+def _tune_logistic(
+    data: dict[str, Any], model_configs: dict[str, dict[str, Any]]
+) -> tuple[float, float]:
+    logistic_max_iter = int(model_configs["logistic"].get("max_iter", 700))
     logger.info("Tuning Logistic Regression over %d C candidates", len(LOGISTIC_CANDIDATES))
     scores: list[tuple[float, float]] = []
     started = time.perf_counter()
     for candidate_index, C in enumerate(LOGISTIC_CANDIDATES, start=1):
-        candidate = build_logistic(C)
+        candidate = build_logistic(C, max_iter=logistic_max_iter)
         candidate.fit(data["search_train"], data["search_labels"])
         score = candidate.score(
             data["validation_features"], data["labels"][data["validation_indices"]]
@@ -179,8 +191,9 @@ def _train_model(
     model_id: str,
     data: dict[str, Any],
     logistic_tuning: tuple[float, float] | None,
+    model_configs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    config = MODEL_CONFIGS[model_id]
+    config = model_configs[model_id]
     started = time.perf_counter()
     if config["kind"] == "linear":
         if logistic_tuning is None:
@@ -231,10 +244,9 @@ def _train_model(
     validation_accuracy = model.score(
         data["validation_features"], data["labels"][data["validation_indices"]]
     )
-    hidden_name = activation if len(hidden) == 1 else f"{'×'.join(str(size) for size in hidden)} · {activation}"
     metadata = model_metadata(
         model_id,
-        f"MLP · {hidden_name}",
+        _ann_display_name(config),
         "ann",
         model,
         architecture_sizes(config),
@@ -258,8 +270,8 @@ def _artifact_common(data: dict[str, Any], include_test_samples: bool) -> dict[s
     scaler: StandardScaler = data["scaler"]
     artifact = {
         "version": 4,
-        "random_seed": RANDOM_SEED,
         "pixel_size": PIXEL_SIZE,
+        "random_seed": RANDOM_SEED,
         "dataset": {
             "name": "MNIST handwritten digits",
             "description": (
@@ -310,13 +322,28 @@ def _artifact_common(data: dict[str, Any], include_test_samples: bool) -> dict[s
     return artifact
 
 
-def train_one(model_id: str) -> Path:
-    if model_id not in MODEL_CONFIGS:
-        raise ValueError(f"Unknown model '{model_id}'. Choose one of: {', '.join(MODEL_IDS)}")
+def prepare_run(run_id: str, config_path: Path) -> Path:
+    run_dir = run_directory(run_id)
+    (run_dir / "shards").mkdir(parents=True, exist_ok=True)
+    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+    snapshot_path = run_dir / "config.json"
+    if not snapshot_path.exists():
+        shutil.copy2(config_path, snapshot_path)
+    return run_dir
 
-    logger.info("[%s] preparing dataset and scaler", model_id)
+
+def train_one(
+    model_id: str,
+    model_configs: dict[str, dict[str, Any]],
+    run_id: str,
+    config_path: Path,
+) -> Path:
+    if model_id not in model_configs:
+        raise ValueError(f"Unknown model '{model_id}'. Choose one of: {', '.join(model_configs)}")
+    run_dir = prepare_run(run_id, config_path)
+    logger.info("[%s] preparing dataset and scaler for run %s", model_id, run_id)
     data = _prepare_data()
-    logistic_tuning = _tune_logistic(data) if model_id == "logistic" else None
+    logistic_tuning = _tune_logistic(data, model_configs) if model_id == "logistic" else None
     if logistic_tuning is not None:
         logger.info(
             "[%s] selected C=%g (validation=%.4f)",
@@ -325,14 +352,15 @@ def train_one(model_id: str) -> Path:
             logistic_tuning[0],
         )
     logger.info("[%s] fitting model", model_id)
-    model = _train_model(model_id, data, logistic_tuning)
+    model = _train_model(model_id, data, logistic_tuning, model_configs)
     artifact = _artifact_common(data, include_test_samples=model_id == "logistic")
+    artifact["run_id"] = run_id
     artifact["models"] = [model]
     artifact["model_configs"] = {
         model_id: {
-            "kind": MODEL_CONFIGS[model_id]["kind"],
-            "architecture": architecture_sizes(MODEL_CONFIGS[model_id]),
-            "activations": layer_activations(MODEL_CONFIGS[model_id]),
+            "kind": model_configs[model_id]["kind"],
+            "architecture": architecture_sizes(model_configs[model_id]),
+            "activations": layer_activations(model_configs[model_id]),
             "validation_accuracy": model["validation_accuracy"],
         }
     }
@@ -346,15 +374,12 @@ def train_one(model_id: str) -> Path:
             "search_sample_count": int(data["search_count"]),
         }
     artifact["primary_ann_id"] = next(
-        model_name
-        for model_name, config in MODEL_CONFIGS.items()
-        if config["kind"] == "ann"
+        model_name for model_name, config in model_configs.items() if config["kind"] == "ann"
     )
     artifact["strong_ann_id"] = [
-        model_name for model_name, config in MODEL_CONFIGS.items() if config["kind"] == "ann"
+        model_name for model_name, config in model_configs.items() if config["kind"] == "ann"
     ][-1]
-    output_path = SHARD_DIR / f"{model_id}.json"
-    SHARD_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = run_dir / "shards" / f"{model_id}.json"
     output_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
     logger.info("[%s] wrote %s", model_id, output_path)
     logger.info("[%s] test_accuracy=%.4f", model_id, model["test_accuracy"])
@@ -378,44 +403,43 @@ def _forward_exported(model: dict[str, Any], features: np.ndarray) -> np.ndarray
     return np.argmax(values, axis=1)
 
 
-def merge_shards() -> Path:
+def merge_shards(
+    model_configs: dict[str, dict[str, Any]], run_id: str, config_path: Path
+) -> Path:
+    run_dir = prepare_run(run_id, config_path)
+    model_ids = tuple(model_configs)
     shards: dict[str, dict[str, Any]] = {}
-    for model_id in MODEL_IDS:
-        path = SHARD_DIR / f"{model_id}.json"
+    for model_id in model_ids:
+        path = run_dir / "shards" / f"{model_id}.json"
         if not path.exists():
-            raise FileNotFoundError(
-                f"Missing shard for {model_id}: {path}. "
-                "Train all models before merging."
-            )
+            raise FileNotFoundError(f"Missing shard for {model_id}: {path}")
         shard = json.loads(path.read_text(encoding="utf-8"))
         if len(shard.get("models", [])) != 1 or shard["models"][0].get("id") != model_id:
             raise ValueError(f"Shard {path} does not contain exactly model {model_id}.")
-        if shard.get("pixel_size") != PIXEL_SIZE:
-            raise ValueError(f"Shard {path} was trained for another pixel size.")
         shards[model_id] = shard
 
+    if "logistic" not in shards:
+        raise ValueError("A run must contain a logistic model shard.")
     base = shards["logistic"]
     if "test_samples" not in base:
         raise ValueError("The logistic shard must contain test_samples.")
-    models = [shards[model_id]["models"][0] for model_id in MODEL_IDS]
+    models = [shards[model_id]["models"][0] for model_id in model_ids]
     artifact = dict(base)
     artifact["models"] = models
+    artifact["run_id"] = run_id
     artifact["model_configs"] = {
         model_id: {
-            "kind": MODEL_CONFIGS[model_id]["kind"],
-            "architecture": architecture_sizes(MODEL_CONFIGS[model_id]),
-            "activations": layer_activations(MODEL_CONFIGS[model_id]),
+            "kind": model_configs[model_id]["kind"],
+            "architecture": architecture_sizes(model_configs[model_id]),
+            "activations": layer_activations(model_configs[model_id]),
             "validation_accuracy": shards[model_id]["models"][0]["validation_accuracy"],
         }
-        for model_id in MODEL_IDS
+        for model_id in model_ids
     }
     artifact["baseline_tuning"] = base["baseline_tuning"]
-    artifact["primary_ann_id"] = next(
-        model_id for model_id, config in MODEL_CONFIGS.items() if config["kind"] == "ann"
-    )
-    artifact["strong_ann_id"] = [
-        model_id for model_id, config in MODEL_CONFIGS.items() if config["kind"] == "ann"
-    ][-1]
+    ann_ids = [model_id for model_id, config in model_configs.items() if config["kind"] == "ann"]
+    artifact["primary_ann_id"] = ann_ids[0]
+    artifact["strong_ann_id"] = ann_ids[-1]
 
     test_features = np.asarray(artifact["test_samples"], dtype=float)
     mean = np.asarray(artifact["preprocessing"]["mean"], dtype=float)
@@ -434,9 +458,39 @@ def merge_shards() -> Path:
             artifact["demo_sample_index"] = int(index)
             break
 
-    MODEL_ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MODEL_ARTIFACT_PATH.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
-    logger.info("Wrote %s", MODEL_ARTIFACT_PATH)
+    output_path = run_dir / f"digits_models_{PIXEL_SIZE}x{PIXEL_SIZE}.json"
+    output_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+    model_summary = [
+        {
+            "id": model["id"],
+            "test_accuracy": model["test_accuracy"],
+            "validation_accuracy": model["validation_accuracy"],
+            "parameter_count": model["parameter_count"],
+        }
+        for model in models
+    ]
+    manifest = {
+        "id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "artifact": relative_project_path(output_path),
+        "config": relative_project_path(run_dir / "config.json"),
+        **current_dataset_metadata(),
+        "random_seed": RANDOM_SEED,
+        "fit_sample_count": int(base["augmentation"]["generated_count"]),
+        "batch_size": next(
+            int(config["batch_size"])
+            for config in model_configs.values()
+            if config["kind"] == "ann"
+        ),
+        "max_iter": max(int(config["max_iter"]) for config in model_configs.values()),
+        "augmentation_factor": AUGMENT_FACTOR,
+        "baseline_tuning": base["baseline_tuning"],
+        "models": model_summary,
+    }
+    (run_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    register_run(manifest, artifact["strong_ann_id"])
+    logger.info("Wrote %s", output_path)
+    logger.info("Registered run %s with primary model %s", run_id, artifact["strong_ann_id"])
     for model in models:
         logger.info(
             "%s: test_accuracy=%.4f, parameters=%d",
@@ -444,20 +498,59 @@ def merge_shards() -> Path:
             model["test_accuracy"],
             model["parameter_count"],
         )
-    return MODEL_ARTIFACT_PATH
+    return output_path
+
+
+def print_runs() -> None:
+    runs = list_runs()
+    if not runs:
+        print("No model runs registered.")
+        return
+    for run in runs:
+        print(f"{run['id']}")
+        print(f"  artifact: {run.get('artifact')}")
+        for model in run.get("models", []):
+            print(
+                f"  {model['id']}: test={model.get('test_accuracy', 0):.4f} "
+                f"validation={model.get('validation_accuracy', 0):.4f}"
+            )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("model_id", nargs="?", choices=MODEL_IDS)
-    parser.add_argument("--merge", action="store_true", help="Merge all model shards.")
+    parser.add_argument("action", nargs="?", help="model id, merge, list, or use")
+    parser.add_argument("value", nargs="?", help="run id for use")
+    parser.add_argument("primary_model_id", nargs="?", help="primary model for use")
+    parser.add_argument("--config", type=Path, default=MODEL_CONFIG_SOURCE_PATH)
+    parser.add_argument("--run-id")
+    parser.add_argument("--list-models", action="store_true")
     args = parser.parse_args()
-    if args.merge:
-        merge_shards()
+    model_configs = load_model_configs(args.config)
+
+    if args.list_models:
+        print("\n".join(model_configs))
         return
-    if args.model_id is None:
-        parser.error(f"provide a model id ({', '.join(MODEL_IDS)}) or --merge")
-    train_one(args.model_id)
+    if args.action == "list":
+        print_runs()
+        return
+    if args.action == "use":
+        if not args.value or not args.primary_model_id:
+            parser.error("use requires <run-id> <model-id>")
+        select_run(args.value, args.primary_model_id)
+        print(f"Active run: {args.value}; primary model: {args.primary_model_id}")
+        return
+    if args.action == "merge":
+        if not args.run_id:
+            parser.error("merge requires --run-id <run-id>")
+        merge_shards(model_configs, args.run_id, args.config)
+        return
+    if args.action not in model_configs:
+        parser.error(
+            f"provide a model id ({', '.join(model_configs)}), merge, list, or use"
+        )
+    if not args.run_id:
+        parser.error("training requires --run-id <run-id>")
+    train_one(args.action, model_configs, args.run_id, args.config)
 
 
 if __name__ == "__main__":

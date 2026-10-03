@@ -85,9 +85,9 @@ Tab `Predict` dùng ảnh chữ số viết tay thật từ MNIST ở kích thư
 - `Logistic Regression`: baseline tuyến tính chính thức từ scikit-learn, `N*N → 10`.
 - MLP một hidden layer: `N*N → H → 10`, với `H = N//2` theo cấu hình mặc định.
 - MLP hai hidden layer: `N*N → H → H → 10`.
-- Compact tuned MLP: cấu hình nhiều hidden layer, được cố định trong `model_config.py`.
+- Compact tuned MLP: cấu hình nhiều hidden layer, được lưu trong JSON canonical.
 
-Logistic Regression và ANN dùng cùng tập validation/test. Riêng tập train được augmentation thành ba phiên bản mỗi ảnh: ảnh gốc, ảnh dịch/co giãn nhẹ và ảnh thay đổi độ dày nét. Augmentation chỉ áp dụng cho `fit_indices`, không áp dụng cho validation hoặc test. Cấu hình augmentation nằm trong `model_config.py`; artifact lưu lại số mẫu thực tế đã dùng. Hai MLP minh họa được giữ nhỏ có chủ đích để minh họa underfitting. Mạng tuned dùng hai hidden layer lớn hơn để thể hiện năng lực phi tuyến.
+Logistic Regression và ANN dùng cùng tập validation/test. Riêng tập train được augmentation thành ba phiên bản mỗi ảnh: ảnh gốc, ảnh dịch/co giãn nhẹ và ảnh thay đổi độ dày nét. Augmentation chỉ áp dụng cho `fit_indices`, không áp dụng cho validation hoặc test. Cấu hình augmentation nằm trong `model_config.py`; artifact lưu lại số mẫu thực tế đã dùng. Các cấu hình model nằm trong JSON canonical và mỗi run snapshot giữ lại bản config đã dùng.
 
 Artifact weight được lưu riêng theo kích thước tại `gk/web/backend/artifacts/digits_models_NxN.json`. Khi chạy web, backend chỉ đọc artifact tương ứng với `.env` và thực hiện forward pass bằng NumPy. Không có quá trình train lại khi mở tab `Predict`.
 
@@ -106,28 +106,28 @@ ANN_DIGIT_SIZE=28
 Tạo lại artifact sau khi thay đổi script hoặc dependency:
 
 ```bash
-./train_mnist.sh all
+./train_mnist.sh all --run-id baseline-28x28-2026-10-03
 ```
 
-Lệnh trên chạy bốn model bằng bốn process độc lập, rồi ghép thành artifact tương ứng. Mỗi model cũng có thể chạy riêng:
+Lệnh trên chạy bốn model bằng bốn process độc lập, tạo một run snapshot rồi đăng ký metric. Mỗi model cũng có thể chạy riêng:
 
 ```bash
-./train_mnist.sh logistic
-./train_mnist.sh compact_sigmoid
-./train_mnist.sh compact_tanh
-./train_mnist.sh compact_relu
-./train_mnist.sh merge
+./train_mnist.sh compact_relu --run-id experiment-relu-v2
+./train_mnist.sh merge --run-id experiment-relu-v2
+./train_mnist.sh list
+./train_mnist.sh use experiment-relu-v2 compact_relu
 ```
 
-`merge` chỉ ghép lại các shard đã train trong `gk/web/backend/artifacts/mnist_dataset/28x28/model_shards/`. Nếu dataset chưa tồn tại, hãy chạy `mnist_dataset.ipynb` trước. Bốn process cùng lúc cần nhiều RAM hơn; log của chế độ `all` nằm trong thư mục `model_shards/logs/`. Dữ liệu gốc không được commit vào repository.
+`list` hiển thị các run và accuracy; `use` chọn run cùng model primary nhưng vẫn giữ cả bốn model trong Predict. Config canonical nằm ở [`mnist_28x28.json`](./gk/web/backend/model_configs/mnist_28x28.json), registry ở [`model_registry.json`](./gk/web/backend/model_registry.json), còn snapshot run nằm trong `gk/web/backend/model_runs/<run-id>/`. Nếu dataset chưa tồn tại, hãy chạy `mnist_dataset.ipynb` trước. Bốn process cùng lúc cần nhiều RAM hơn. Dataset không được commit; artifact model được quản lý bằng Git LFS.
 
 Phần train được tách thành ba file để dễ chỉnh trong notebook hoặc chạy trực tiếp:
 
 - [`digits_dataset.py`](./gk/web/backend/digits_dataset.py): tải MNIST, đọc IDX và normalize ảnh theo pipeline của UI.
-- [`model_config.py`](./gk/web/backend/model_config.py): nguồn cấu hình duy nhất của Logistic Regression, hai ANN minh họa và ANN tuned.
+- [`model_configs/mnist_28x28.json`](./gk/web/backend/model_configs/mnist_28x28.json): nguồn cấu hình model canonical.
+- [`model_config.py`](./gk/web/backend/model_config.py): loader và validator cấu hình JSON.
 - [`digits_models.py`](./gk/web/backend/digits_models.py): factory scikit-learn, export layer và các helper dùng chung.
-- [`train_digits_models.py`](./gk/web/backend/train_digits_models.py): train tuần tự và export artifact đầy đủ.
-- [`train_digit_model.py`](./gk/web/backend/train_digit_model.py): train từng model, ghi shard và ghép artifact khi chạy song song.
+- [`train_digit_model.py`](./gk/web/backend/train_digit_model.py): train shard, merge snapshot và đăng ký run.
+- [`model_registry.py`](./gk/web/backend/model_registry.py): resolve run active và model primary cho backend.
 
 Notebook tổng hợp nhanh: [`mnist_ann_training.ipynb`](./gk/mds/mnist_ann_training.ipynb).
 
@@ -140,7 +140,7 @@ Ba notebook chuyên dụng nên chạy theo thứ tự:
 
 Notebook train đọc ảnh 28×28 local rồi flatten thành 784 feature ngay trước khi đưa vào model. Dataset và artifact của pipeline nằm riêng trong thư mục `28x28`.
 
-Muốn đổi kiến trúc, activation, learning rate, số vòng lặp hoặc augmentation, sửa [`model_config.py`](./gk/web/backend/model_config.py), chạy lại `mnist_models.ipynb`, rồi chạy `mnist_train.ipynb`. Các notebook sẽ hiển thị log loss, epoch, accuracy, confusion matrix và ghi artifact cho web; không cần chạy lệnh train bằng terminal.
+Muốn thử kiến trúc, activation, learning rate hoặc số vòng lặp mới, copy config JSON thành một file experiment rồi chạy `./train_mnist.sh all --config <path> --run-id <id>`. Notebook model và notebook train đọc cùng nguồn JSON; không sửa trực tiếp `model_config.py` để đổi kiến trúc.
 
 Trang Predict cho phép chọn mẫu trong test set hoặc vẽ tự do trên canvas. `test accuracy` là metric của toàn bộ test set; `predicted digit` và `confidence` là kết quả của mẫu đang hiển thị.
 

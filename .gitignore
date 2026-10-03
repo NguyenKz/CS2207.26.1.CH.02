@@ -10,6 +10,8 @@ gk/web/backend/artifacts/mnist_dataset/
 gk/web/backend/artifacts/digits_models_*x*.json
 gk/web/backend/artifacts/mnist_model_config.json
 gk/web/backend/artifacts/mnist_normalized_dataset.npz
+gk/web/backend/model_runs/*/logs/
+gk/web/backend/model_runs/*/shards/
 
 # Local Python and OS files
 .pytest_cache/

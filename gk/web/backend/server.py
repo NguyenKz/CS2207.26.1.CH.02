@@ -498,6 +498,7 @@ async def predict_meta() -> dict[str, Any]:
         "preprocessing": {"name": artifact["preprocessing"]["name"]},
         "test_indices": get_test_indices(artifact),
         "default_sample_index": int(artifact.get("demo_sample_index", get_test_indices(artifact)[0])),
+        "primary_model_id": artifact.get("primary_model_id"),
         "models": public_model_metadata(artifact),
     }
 

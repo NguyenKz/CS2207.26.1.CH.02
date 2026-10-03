@@ -32,6 +32,7 @@ type PredictMeta = {
   preprocessing: { name: string };
   test_indices: number[];
   default_sample_index: number;
+  primary_model_id: string | null;
   models: ModelMeta[];
 };
 
@@ -296,11 +297,13 @@ function ProbabilityBars({ probabilities, compact = false }: { probabilities: nu
 function ModelCard({
   model,
   trueLabel,
+  primary,
   selected,
   onSelect,
 }: {
   model: ModelResult | ModelMeta;
   trueLabel: number | null;
+  primary: boolean;
   selected: boolean;
   onSelect: () => void;
 }): ReactElement {
@@ -317,7 +320,7 @@ function ModelCard({
       >
         <span className="predict-model-topline">
           <span className="section-kicker">{model.kind === "linear" ? "BASELINE" : "ANN MODEL"}</span>
-          <span className="predict-model-state">{selected ? "Selected" : "Inspect"}</span>
+          <span className="predict-model-state">{primary ? "Primary" : selected ? "Selected" : "Inspect"}</span>
         </span>
         <strong>{model.name}</strong>
         {model.source && <small className="predict-baseline-source">Official scikit-learn baseline</small>}
@@ -473,7 +476,7 @@ export function PredictPanel(): ReactElement {
         const data = (await response.json()) as PredictMeta;
         if (cancelled) return;
         setMeta(data);
-        setSelectedModelId(data.models[0]?.id ?? "logistic");
+        setSelectedModelId(data.primary_model_id ?? data.models[0]?.id ?? "logistic");
         if (data.default_sample_index !== undefined) await fetchSample(data.default_sample_index);
       } catch (error) {
         if (!cancelled) {
@@ -672,6 +675,7 @@ export function PredictPanel(): ReactElement {
                       key={model.id}
                       model={resultModel ?? model}
                       trueLabel={result?.true_label ?? sampleLabel}
+                      primary={meta.primary_model_id === model.id}
                       selected={selectedModelId === model.id}
                       onSelect={() => setSelectedModelId(model.id)}
                     />

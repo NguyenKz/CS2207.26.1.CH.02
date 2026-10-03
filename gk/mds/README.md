@@ -42,9 +42,9 @@ Thư mục này chứa phần giải thích, lộ trình học và thiết kế 
 - [`mnist_test.ipynb`](./mnist_test.ipynb): đọc weight, chọn mẫu test và kiểm tra prediction/probability.
 - [`mnist_models.ipynb`](./mnist_models.ipynb): đọc, kiểm tra cấu hình cố định và xuất `mnist_model_config.json` vào thư mục dataset.
 
-Cấu hình mặc định của bốn model và augmentation nằm ở [`../web/backend/model_config.py`](../web/backend/model_config.py). Sửa file này, chạy `mnist_models.ipynb` để ghi cấu hình, sau đó chạy `mnist_train.ipynb` để train và cập nhật artifact cho web.
+Cấu hình model canonical nằm ở [`../web/backend/model_configs/mnist_28x28.json`](../web/backend/model_configs/mnist_28x28.json); loader và validator nằm ở [`../web/backend/model_config.py`](../web/backend/model_config.py). Copy JSON này để thử experiment mới, sau đó chạy `train_mnist.sh` với `--config` và `--run-id` để lưu snapshot, metric và weight riêng.
 
-Pipeline chỉ hỗ trợ kích thước gốc MNIST `28×28`. Nếu không có `.env`, pipeline mặc định dùng `28×28`. Dataset nằm trong `gk/web/backend/artifacts/mnist_dataset/28x28/`, còn artifact model nằm ở `gk/web/backend/artifacts/digits_models_28x28.json`.
+Pipeline chỉ hỗ trợ kích thước gốc MNIST `28×28`. Nếu không có `.env`, pipeline mặc định dùng `28×28`. Dataset nằm trong `gk/web/backend/artifacts/mnist_dataset/28x28/`; registry chọn artifact model active và các run snapshot nằm trong `gk/web/backend/model_runs/`.
 
 ## Nguồn PDF
 

@@ -1,1 +1,2 @@
 gk/web/backend/artifacts/digits_models_28x28.json filter=lfs diff=lfs merge=lfs -text
+gk/web/backend/model_runs/**/digits_models_28x28.json filter=lfs diff=lfs merge=lfs -text

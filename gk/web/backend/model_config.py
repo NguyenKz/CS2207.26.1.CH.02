@@ -10,6 +10,8 @@ ANN configs declare every layer as ``{input, output, activation}``. Sklearn's
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -73,55 +75,46 @@ def hidden_activation(config: dict[str, Any]) -> str | None:
     return None if not hidden else hidden[0]["activation"]
 
 
-# Edit this dictionary when changing the demo architecture. The three
-# notebooks and the backend training helper import the same defaults.
-MODEL_CONFIGS = {
-    "logistic": {
-        "kind": "linear",
-        "layers": [
-            {"input": PIXEL_COUNT, "output": CLASS_COUNT, "activation": "softmax"},
-        ],
-        "C": 1.0,
-        "solver": "lbfgs",
-        "max_iter": MAX_ITER,
-    },
-    "compact_sigmoid": {
-        "kind": "ann",
-        "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "sigmoid"},
-            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "sigmoid"},
-            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
-        ],
-        "learning_rate_init": 0.001,
-        "batch_size": BATCH_SIZE,
-        "max_iter": MAX_ITER,
-        "early_stopping": EARLY_STOPPING,
-    },
-    "compact_tanh": {
-        "kind": "ann",
-        "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "tanh"},
-            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "tanh"},
-            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
-        ],
-        "learning_rate_init": 0.002,
-        "batch_size": BATCH_SIZE,
-        "max_iter": MAX_ITER,
-        "early_stopping": EARLY_STOPPING,
-    },
-    "compact_relu": {
-        "kind": "ann",
-        "layers": [
-            {"input": PIXEL_COUNT, "output": PIXEL_COUNT // 4, "activation": "relu"},
-            {"input": PIXEL_COUNT // 4, "output": PIXEL_COUNT // 8, "activation": "relu"},
-            {"input": PIXEL_COUNT // 8, "output": CLASS_COUNT, "activation": "softmax"},
-        ],
-        "learning_rate_init": 0.002,
-        "batch_size": BATCH_SIZE,
-        "max_iter": MAX_ITER,
-        "early_stopping": EARLY_STOPPING,
-    },
-}
+MODEL_CONFIG_SOURCE_PATH = Path(__file__).with_name("model_configs") / "mnist_28x28.json"
+
+
+def load_model_configs(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
+    """Load and validate a JSON model configuration for the active 28x28 pipeline."""
+    config_path = MODEL_CONFIG_SOURCE_PATH if path is None else Path(path)
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    if payload.get("pixel_size") != PIXEL_SIZE:
+        raise ValueError(
+            f"Model config pixel_size must be {PIXEL_SIZE}: {config_path}"
+        )
+    configs = payload.get("models")
+    if not isinstance(configs, dict) or not configs:
+        raise ValueError(f"Model config must contain a non-empty models object: {config_path}")
+
+    for model_id, config in configs.items():
+        if not isinstance(config, dict):
+            raise ValueError(f"Model config {model_id} must be an object.")
+        layers = layers_from_config(config)
+        if layers[0]["input"] != PIXEL_COUNT:
+            raise ValueError(f"Model {model_id} must start with {PIXEL_COUNT} features.")
+        if layers[-1]["output"] != CLASS_COUNT:
+            raise ValueError(f"Model {model_id} must end with {CLASS_COUNT} outputs.")
+        for left, right in zip(layers, layers[1:]):
+            if left["output"] != right["input"]:
+                raise ValueError(f"Model {model_id} has disconnected layers.")
+        if config.get("kind") not in {"linear", "ann"}:
+            raise ValueError(f"Model {model_id} has an unsupported kind.")
+        if config["kind"] == "ann":
+            if not hidden_layer_sizes(config) or hidden_activation(config) is None:
+                raise ValueError(f"ANN model {model_id} needs at least one hidden layer.")
+            hidden_activations = [layer["activation"] for layer in layers[:-1]]
+            if len(set(hidden_activations)) != 1:
+                raise ValueError(
+                    f"MLPClassifier requires one shared hidden activation: {model_id}"
+                )
+    return configs
+
+
+MODEL_CONFIGS = load_model_configs()
 
 
 if __name__ == "__main__":

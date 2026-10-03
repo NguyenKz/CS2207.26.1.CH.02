@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "active_run_id": "baseline-28x28-2026-10-03",
+  "primary_model_id": "compact_relu",
+  "runs": [
+    {
+      "id": "baseline-28x28-2026-10-03",
+      "artifact": "gk/web/backend/artifacts/digits_models_28x28.json",
+      "config": "gk/web/backend/model_configs/mnist_28x28.json",
+      "pixel_size": 28,
+      "feature_count": 784,
+      "random_seed": 42,
+      "fit_sample_count": 240000,
+      "batch_size": 256,
+      "max_iter": 700,
+      "augmentation_factor": 5,
+      "models": [
+        {
+          "id": "logistic",
+          "test_accuracy": 0.8833,
+          "validation_accuracy": 0.8711666666666666
+        },
+        {
+          "id": "compact_sigmoid",
+          "test_accuracy": 0.9625,
+          "validation_accuracy": 0.9613333333333334
+        },
+        {
+          "id": "compact_tanh",
+          "test_accuracy": 0.9601,
+          "validation_accuracy": 0.9611666666666666
+        },
+        {
+          "id": "compact_relu",
+          "test_accuracy": 0.9737,
+          "validation_accuracy": 0.9755833333333334
+        }
+      ]
+    }
+  ]
+}

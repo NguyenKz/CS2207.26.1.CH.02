@@ -15,14 +15,13 @@ from .digits_config import (
     PIXEL_COUNT,
     PIXEL_SIZE,
 )
-
-ARTIFACT_PATH = (
-    MODEL_ARTIFACT_PATH
-    if MODEL_ARTIFACT_PATH.exists()
-    else LEGACY_MODEL_ARTIFACT_PATH
-    if PIXEL_SIZE == 8
-    else MODEL_ARTIFACT_PATH
+from .model_registry import (
+    MODEL_REGISTRY_PATH,
+    active_primary_model_id,
+    load_registry,
+    resolve_artifact_path,
 )
+
 CLASS_COUNT = 10
 DRAWING_SIZE = 128
 DRAWING_COUNT = DRAWING_SIZE * DRAWING_SIZE
@@ -83,16 +82,32 @@ def _as_vector(values: Any, size: int, label: str) -> np.ndarray:
     return vector
 
 
-@lru_cache(maxsize=1)
 def load_digits_artifact() -> dict[str, Any]:
-    if not ARTIFACT_PATH.exists():
+    registry = load_registry()
+    artifact_path = resolve_artifact_path(registry)
+    if not artifact_path.exists() and not MODEL_REGISTRY_PATH.exists():
+        artifact_path = (
+            LEGACY_MODEL_ARTIFACT_PATH
+            if PIXEL_SIZE == 8
+            else MODEL_ARTIFACT_PATH
+        )
+    if not artifact_path.exists():
         raise DigitsArtifactError(
             f"Digits model artifact for {PIXEL_SIZE}x{PIXEL_SIZE} is missing. "
-            "Run mnist_dataset.ipynb and mnist_train.ipynb with the current "
-            "ANN_DIGIT_SIZE, then restart the backend."
+            "Train a model run and select it in model_registry.json."
         )
+    return _load_digits_artifact_from_path(
+        str(artifact_path), active_primary_model_id(registry)
+    )
+
+
+@lru_cache(maxsize=8)
+def _load_digits_artifact_from_path(
+    artifact_path_str: str, primary_model_id: str | None
+) -> dict[str, Any]:
+    artifact_path = Path(artifact_path_str)
     try:
-        artifact = json.loads(ARTIFACT_PATH.read_text(encoding="utf-8"))
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise DigitsArtifactError(f"Could not read digits artifact: {error}") from error
 
@@ -148,6 +163,9 @@ def load_digits_artifact() -> dict[str, Any]:
             raise DigitsArtifactError(
                 f"Model {model['id']} must end with {CLASS_COUNT} outputs."
             )
+    artifact["primary_model_id"] = (
+        primary_model_id or artifact.get("primary_model_id") or artifact.get("strong_ann_id")
+    )
     return artifact
 
 

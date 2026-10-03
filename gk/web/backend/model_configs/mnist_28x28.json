@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "pixel_size": 28,
+  "models": {
+    "logistic": {
+      "kind": "linear",
+      "layers": [
+        {"input": 784, "output": 10, "activation": "softmax"}
+      ],
+      "C": 1.0,
+      "solver": "lbfgs",
+      "max_iter": 700
+    },
+    "compact_sigmoid": {
+      "kind": "ann",
+      "layers": [
+        {"input": 784, "output": 196, "activation": "sigmoid"},
+        {"input": 196, "output": 98, "activation": "sigmoid"},
+        {"input": 98, "output": 10, "activation": "softmax"}
+      ],
+      "learning_rate_init": 0.001,
+      "batch_size": 256,
+      "max_iter": 700,
+      "early_stopping": true
+    },
+    "compact_tanh": {
+      "kind": "ann",
+      "layers": [
+        {"input": 784, "output": 196, "activation": "tanh"},
+        {"input": 196, "output": 98, "activation": "tanh"},
+        {"input": 98, "output": 10, "activation": "softmax"}
+      ],
+      "learning_rate_init": 0.002,
+      "batch_size": 256,
+      "max_iter": 700,
+      "early_stopping": true
+    },
+    "compact_relu": {
+      "kind": "ann",
+      "layers": [
+        {"input": 784, "output": 196, "activation": "relu"},
+        {"input": 196, "output": 98, "activation": "relu"},
+        {"input": 98, "output": 10, "activation": "softmax"}
+      ],
+      "learning_rate_init": 0.002,
+      "batch_size": 256,
+      "max_iter": 700,
+      "early_stopping": true
+    }
+  }
+}
