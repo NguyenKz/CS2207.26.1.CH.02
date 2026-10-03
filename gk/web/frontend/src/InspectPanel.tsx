@@ -5,7 +5,6 @@ const ACTIVATIONS = [
   "sigmoid",
   "relu",
   "leaky_relu",
-  "softplus",
   "identity",
 ] as const;
 
@@ -70,7 +69,6 @@ const ACTIVATION_LABELS: Record<ActivationName, string> = {
   sigmoid: "Sigmoid",
   relu: "ReLU",
   leaky_relu: "Leaky ReLU",
-  softplus: "Softplus",
   identity: "Identity",
 };
 
@@ -1212,8 +1210,8 @@ export function InspectPanel(): ReactElement {
               </div>
               <p>
                 {sampleLabel == null
-                  ? "Edit values or load a holdout sample."
-                  : `Holdout sample · true label class_${sampleLabel}`}
+                  ? "Edit values or load a test sample."
+                  : `Test sample · true label class_${sampleLabel}`}
               </p>
             </div>
             <div className="inspect-feature-grid">

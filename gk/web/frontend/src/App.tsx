@@ -9,7 +9,6 @@ const ACTIVATIONS = [
   "sigmoid",
   "relu",
   "leaky_relu",
-  "softplus",
   "identity",
 ] as const;
 const CLASS_COUNT = 10;
@@ -24,7 +23,6 @@ type ConnectionState = "disconnected" | "connecting" | "connected";
 
 export type RunConfig = {
   epochs: number;
-  delay_seconds: number;
   learning_rate: number;
   difficulty: number;
   sample_count: number;
@@ -32,7 +30,6 @@ export type RunConfig = {
   train_percentage: number;
   validation_percentage: number;
   test_percentage: number;
-  holdout_percentage: number;
   input_feature_count: number;
   hidden_neuron_count: number;
   random_seed: number;
@@ -61,7 +58,6 @@ type SummaryResult = {
   activation: ActivationName;
   epochs_completed: number;
   test_accuracy: number;
-  holdout_accuracy?: number;
   training_loss: number | null;
   validation_loss: number | null;
   validation_accuracy: number | null;
@@ -88,27 +84,23 @@ type SocketMessage = {
   train_percentage?: number;
   validation_percentage?: number;
   test_percentage?: number;
-  holdout_percentage?: number;
   results?: SummaryResult[];
   dataset?: {
     training: number[];
     validation: number[];
     testing: number[];
-    holdout?: number[];
   };
 };
 
 const DEFAULT_CONFIG: RunConfig = {
   epochs: 600,
-  delay_seconds: 0.01,
   learning_rate: 0.08,
   difficulty: 0.7,
   sample_count: DEFAULT_SAMPLE_COUNT,
   batch_size: 32,
-  train_percentage: 60,
+  train_percentage: 70,
   validation_percentage: 15,
   test_percentage: 15,
-  holdout_percentage: 10,
   input_feature_count: 32,
   hidden_neuron_count: 32,
   random_seed: 42,
@@ -123,18 +115,16 @@ const ACTIVATION_LABELS: Record<ActivationName, string> = {
   sigmoid: "Sigmoid",
   relu: "ReLU",
   leaky_relu: "Leaky ReLU",
-  softplus: "Softplus",
   identity: "Identity",
 };
 
 /** One-line teaching cue: formula + what to watch while curves move. */
 const ACTIVATION_CUES: Record<ActivationName, { formula: string; watch: string }> = {
-  tanh: { formula: "tanh(z)", watch: "symmetric around ±1 · can saturate at the edges" },
-  sigmoid: { formula: "σ(z)", watch: "outputs (0, 1) · saturates early, so learning slows" },
-  relu: { formula: "max(0, z)", watch: "learns quickly · negative inputs become 0 (neurons can die)" },
-  leaky_relu: { formula: "max(αz, z)", watch: "like ReLU · negative inputs keep a small gradient" },
-  softplus: { formula: "log(1+eᶻ)", watch: "smooth ReLU · continuous at 0" },
-  identity: { formula: "z", watch: "no nonlinearity · often performs worst" },
+  tanh: { formula: "tanh(z)", watch: "symmetric · can saturate" },
+  sigmoid: { formula: "σ(z)", watch: "0 to 1 · saturates early" },
+  relu: { formula: "max(0, z)", watch: "fast · negative inputs become 0" },
+  leaky_relu: { formula: "max(αz, z)", watch: "ReLU with a small negative gradient" },
+  identity: { formula: "z", watch: "no nonlinearity" },
 };
 
 const ACTIVATION_COLORS: Record<ActivationName, string> = {
@@ -142,7 +132,6 @@ const ACTIVATION_COLORS: Record<ActivationName, string> = {
   sigmoid: "#2c7a7b",
   relu: "#b7862c",
   leaky_relu: "#6b5ca5",
-  softplus: "#377d5f",
   identity: "#435466",
 };
 
@@ -173,6 +162,11 @@ function formatLoss(value: number | null): string {
 
 function formatAccuracy(value: number | null | undefined): string {
   return value == null ? "n/a" : `${(value * 100).toFixed(1)}%`;
+}
+
+function parameterCount(inputFeatureCount: number, hiddenNeuronCount: number): number {
+  return inputFeatureCount * hiddenNeuronCount + hiddenNeuronCount
+    + hiddenNeuronCount * CLASS_COUNT + CLASS_COUNT;
 }
 
 function difficultyDescription(difficulty: number): string {
@@ -323,6 +317,7 @@ function PipelineSizeSelect({
 function NetworkPipeline({
   inputFeatureCount,
   hiddenNeuronCount,
+  totalParameters,
   currentEpoch,
   totalEpochs,
   disabled,
@@ -331,6 +326,7 @@ function NetworkPipeline({
 }: {
   inputFeatureCount: number;
   hiddenNeuronCount: number;
+  totalParameters: number;
   currentEpoch: number;
   totalEpochs: number;
   disabled: boolean;
@@ -399,13 +395,16 @@ function NetworkPipeline({
 
   return (
     <section className="pipeline-panel" aria-labelledby="pipeline-title">
-      <div className="section-kicker">THE MECHANISM</div>
+      <div className="section-kicker">ANN BASICS</div>
       <div className="pipeline-heading">
         <div>
-          <h2 id="pipeline-title">Inside one epoch</h2>
-          <p>Adjust Input and Hidden dimensions directly in the shape. Output is fixed at 10 classes.</p>
+          <h2 id="pipeline-title">One epoch, step by step</h2>
+          <p>Inputs become activations, loss measures error, and updates change the weights.</p>
         </div>
-        <div className="epoch-counter"><span>Epoch</span><strong>{currentEpoch}</strong><small>/ {totalEpochs}</small></div>
+        <div className="pipeline-metrics">
+          <div className="epoch-counter"><span>Epoch</span><strong>{currentEpoch}</strong><small>/ {totalEpochs}</small></div>
+          <div className="parameter-counter"><span>Total parameters</span><strong>{totalParameters.toLocaleString("en-US")}</strong></div>
+        </div>
       </div>
       <div className="pipeline-steps">
         {steps.map((step, index) => (
@@ -473,8 +472,9 @@ function App(): ReactElement {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const controlsDisabled = runState === "running" || runState === "connecting";
-  const splitPercentageTotal = runConfig.train_percentage + runConfig.validation_percentage + runConfig.test_percentage + runConfig.holdout_percentage;
+  const splitPercentageTotal = runConfig.train_percentage + runConfig.validation_percentage + runConfig.test_percentage;
   const splitIsValid = Math.abs(splitPercentageTotal - 100) < 0.001;
+  const totalParameters = parameterCount(runConfig.input_feature_count, runConfig.hidden_neuron_count);
 
   const currentEpoch = Math.max(...ACTIVATIONS.map((activation) => metrics[activation].epoch));
   const statusText = useMemo(() => {
@@ -499,7 +499,6 @@ function App(): ReactElement {
         ...(message.train_percentage === undefined ? {} : { train_percentage: message.train_percentage }),
         ...(message.validation_percentage === undefined ? {} : { validation_percentage: message.validation_percentage }),
         ...(message.test_percentage === undefined ? {} : { test_percentage: message.test_percentage }),
-        ...(message.holdout_percentage === undefined ? {} : { holdout_percentage: message.holdout_percentage }),
       }));
       return;
     }
@@ -620,7 +619,7 @@ function App(): ReactElement {
       <header className="topbar app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ANN</div>
-          <div><strong>Training Lab</strong><span>ANN from scratch · train · predict · inspect</span></div>
+          <div><strong>Training Lab</strong><span>ANN from scratch · review · predict · inspect</span></div>
         </div>
         <nav className="tabs" aria-label="Demo sections">
           <button
@@ -628,7 +627,7 @@ function App(): ReactElement {
             type="button"
             onClick={() => setActiveTab("train")}
           >
-            Train
+            Review
           </button>
           <button
             className={`tab ${activeTab === "predict" ? "tab-active" : ""}`}
@@ -669,29 +668,28 @@ function App(): ReactElement {
             <div className="lesson-body">
               <div className="lesson-intro">
                 <div className="lesson-copy">
-                  <div className="section-kicker">LESSON 01 / ACTIVATION COMPARISON</div>
-                  <h1>Same task, different activation functions</h1>
+                  <div className="section-kicker">ANN REVIEW</div>
+                  <h1>ANN Review</h1>
+                  <span className="review-status"><span className="status-mark" aria-hidden="true" />{statusText}</span>
                   <p className="intro-copy">
-                    Six identical networks. Only the hidden-layer activation changes. Watch which one reduces loss fastest, which one saturates early, and why Identity, with no nonlinearity, usually performs worst on harder tasks.
+                    Review the key parts of an ANN: inputs, hidden layers, activations, loss, and weight updates.
                   </p>
                 </div>
               </div>
 
               <section className="control-panel" aria-label="Training controls">
-                <div className="control-heading"><span className="section-kicker">CONTROL ROOM</span><strong>{statusText}</strong><label className="toggle-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span><small>Stop when validation loss fails to decrease by ≥ {runConfig.early_stopping_min_delta} for {runConfig.early_stopping_patience} consecutive epochs.</small></label></div>
+                <label className="early-stopping-field"><input type="checkbox" checked={runConfig.early_stopping} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, early_stopping: event.target.checked })} /><span>Early stopping</span></label>
                 <label className="difficulty-field">Difficulty <output>{Math.round(runConfig.difficulty * 100)}%</output><input className="difficulty-range" type="range" min="0" max="100" step="1" value={Math.round(runConfig.difficulty * 100)} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, difficulty: Number(event.target.value) / 100 })} /><span className="difficulty-endpoints"><span>Easy</span><span>Hard</span></span><small>{difficultyDescription(runConfig.difficulty)}</small></label>
                 <div className="dataset-settings" aria-label="Dataset settings">
                   <label>Total<input type="number" min="30" max="10000" step="10" value={runConfig.sample_count} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, sample_count: Number(event.target.value) })} /></label>
                   <label>Train %<input type="number" min="1" max="98" value={runConfig.train_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, train_percentage: Number(event.target.value) })} /></label>
                   <label>Val %<input type="number" min="1" max="98" value={runConfig.validation_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, validation_percentage: Number(event.target.value) })} /></label>
                   <label>Test %<input type="number" min="1" max="98" value={runConfig.test_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, test_percentage: Number(event.target.value) })} /></label>
-                  <label>Final %<input type="number" min="1" max="98" value={runConfig.holdout_percentage} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, holdout_percentage: Number(event.target.value) })} /></label>
                   <small className="dataset-count-note">default: {CLASS_COUNT} classes × {SAMPLES_PER_CLASS} = {DEFAULT_SAMPLE_COUNT}</small>
                   <small className={splitIsValid ? "split-valid" : "split-invalid"}>sum {splitPercentageTotal}%</small>
                 </div>
                 <label className="batch-field">Batch size<input type="number" min="1" max={runConfig.sample_count} value={runConfig.batch_size} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, batch_size: Number(event.target.value) })} /></label>
                 <label className="epochs-field">Epochs<input type="number" min="1" max="5000" value={runConfig.epochs} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, epochs: Number(event.target.value) })} /></label>
-                <label className="delay-field">Delay per epoch<select value={runConfig.delay_seconds} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, delay_seconds: Number(event.target.value) })}><option value="0.001">0.001s</option><option value="0.01">0.01s</option><option value="0.05">0.05s</option><option value="0.1">0.1s</option></select></label>
                 <label className="learning-field">Learning rate<input type="number" min="0.001" max="1" step="0.01" value={runConfig.learning_rate} disabled={controlsDisabled} onChange={(event) => setRunConfig({ ...runConfig, learning_rate: Number(event.target.value) })} /></label>
                 <div className="control-actions"><button className="button button-primary" type="button" onClick={handleStart} disabled={controlsDisabled || !splitIsValid}>Start training</button><button className="button button-quiet" type="button" onClick={handleCancel} disabled={runState !== "running"}>Cancel</button><button className="button button-quiet" type="button" onClick={handleReset}>Reset</button></div>
                 {errorMessage && <p className="error-note" role="alert">{errorMessage}</p>}
@@ -702,6 +700,7 @@ function App(): ReactElement {
           <NetworkPipeline
             inputFeatureCount={runConfig.input_feature_count}
             hiddenNeuronCount={runConfig.hidden_neuron_count}
+            totalParameters={totalParameters}
             currentEpoch={currentEpoch}
             totalEpochs={runConfig.epochs}
             disabled={controlsDisabled}
@@ -711,7 +710,7 @@ function App(): ReactElement {
 
           <div className="training-stage">
             <section className="section-block" aria-labelledby="lanes-title">
-              <div className="section-heading"><div><div className="section-kicker">LIVE COMPARISON</div><h2 id="lanes-title">Six lanes, one starting point</h2></div><p>Each card shows one function. Read the formula, then follow the loss curve.</p></div>
+              <div className="section-heading"><div><div className="section-kicker">ACTIVATION COMPARISON</div><h2 id="lanes-title">Five functions, one starting point</h2></div><p>Compare the shape, loss, and validation accuracy.</p></div>
               <div className="activation-grid">
                 {ACTIVATIONS.map((activation) => <ActivationCard key={activation} activation={activation} metric={metrics[activation]} history={histories[activation]} />)}
               </div>
@@ -719,7 +718,7 @@ function App(): ReactElement {
 
             <section className="lower-grid">
               <div className="chart-panel panel-surface"><div className="section-heading compact"><div><div className="section-kicker">LOSS OVER TIME</div><h2>Which curve drops first?</h2></div><p>Click a name to hide or show it. Try ReLU vs Sigmoid, then Identity vs the rest.</p></div><div className="legend-row">{ACTIVATIONS.map((activation) => <button key={activation} type="button" className={`legend-item ${visibleActivations.has(activation) ? "legend-visible" : "legend-hidden"}`} onClick={() => toggleActivation(activation)}><span style={{ backgroundColor: ACTIVATION_COLORS[activation] }} />{ACTIVATION_LABELS[activation]}</button>)}</div><LossChart histories={histories} visibleActivations={visibleActivations} /></div>
-              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">Which model wins on validation?</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions · highlight = highest validation accuracy</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>final acc <b>{formatAccuracy(result.holdout_accuracy)}</b></span></div>)}</div><p className="summary-note">Do not judge by loss alone: Identity can have lower cross-entropy while making fewer correct predictions. Accuracy is the main metric for classification. Final accuracy is measured on the holdout set after training and does not update the weights. ReLU, Leaky ReLU, and Softplus often achieve higher accuracy; Sigmoid and tanh can saturate; Identity has no nonlinearity.</p></section>}
+              {summary && <section className="summary-panel panel-surface" aria-labelledby="summary-title"><div className="section-heading"><div><div className="section-kicker">RUN SUMMARY</div><h2 id="summary-title">Which model wins on validation?</h2></div><p>{summary.durationMs} ms · {summary.results.length} activation functions · highlight = highest validation accuracy</p></div><div className="summary-grid">{summary.results.map((result) => <div className={`summary-row ${bestValidation?.activation === result.activation ? "summary-highlight" : ""}`} key={result.activation}><span className="activation-swatch" style={{ backgroundColor: ACTIVATION_COLORS[result.activation] }} /><strong>{ACTIVATION_LABELS[result.activation]}</strong><span>v loss <b>{formatLoss(result.validation_loss)}</b></span><span>v acc <b>{formatAccuracy(result.validation_accuracy)}</b></span><span>test acc <b>{formatAccuracy(result.test_accuracy)}</b></span></div>)}</div><p className="summary-note">Accuracy matters more than loss for classification. Test accuracy is measured after training. ReLU and Leaky ReLU often learn quickly; Sigmoid and tanh can saturate; Identity has no nonlinearity.</p></section>}
             </section>
           </div>
         </>

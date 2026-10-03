@@ -48,15 +48,13 @@ app.add_middleware(
 
 class TrainConfig(BaseModel):
     epochs: int = Field(default=2000, ge=1, le=500000)
-    delay_seconds: float = Field(default=0.001, ge=0.0, le=2.0)
     learning_rate: float = Field(default=0.05, gt=0.0, le=1.0)
     difficulty: float = Field(default=0.5, ge=0.0, le=1.0)
     sample_count: int = Field(default=DEFAULT_SAMPLE_COUNT, ge=30, le=10000)
     batch_size: int = Field(default=32, ge=1, le=10000)
-    train_percentage: float = Field(default=60.0, gt=0.0, lt=100.0)
+    train_percentage: float = Field(default=70.0, gt=0.0, lt=100.0)
     validation_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
     test_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
-    holdout_percentage: float = Field(default=10.0, gt=0.0, lt=100.0)
     input_feature_count: int = Field(default=8)
     hidden_neuron_count: int = Field(default=8, ge=1, le=128)
     random_seed: int = 42
@@ -90,7 +88,6 @@ class TrainConfig(BaseModel):
             self.train_percentage,
             self.validation_percentage,
             self.test_percentage,
-            self.holdout_percentage,
         )
         return self
 
@@ -99,9 +96,8 @@ def _validate_dataset_split(
     train_percentage: float,
     validation_percentage: float,
     test_percentage: float,
-    holdout_percentage: float,
 ) -> None:
-    split_total = train_percentage + validation_percentage + test_percentage + holdout_percentage
+    split_total = train_percentage + validation_percentage + test_percentage
     if abs(split_total - 100.0) > 1e-6:
         raise ValueError("all dataset percentages must sum to 100")
 
@@ -109,10 +105,9 @@ def _validate_dataset_split(
 class DatasetTrainConfig(BaseModel):
     difficulty: float = Field(default=0.7, ge=0.0, le=1.0)
     sample_count: int = Field(default=DEFAULT_SAMPLE_COUNT, ge=30, le=10000)
-    train_percentage: float = Field(default=60.0, gt=0.0, lt=100.0)
+    train_percentage: float = Field(default=70.0, gt=0.0, lt=100.0)
     validation_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
     test_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
-    holdout_percentage: float = Field(default=10.0, gt=0.0, lt=100.0)
     input_feature_count: int = Field(default=32)
     random_seed: int = 42
 
@@ -131,7 +126,6 @@ class DatasetTrainConfig(BaseModel):
             self.train_percentage,
             self.validation_percentage,
             self.test_percentage,
-            self.holdout_percentage,
         )
         return self
 
@@ -151,7 +145,7 @@ class DatasetTrainPreviewRequest(DatasetTrainConfig):
 
 class DatasetTrainSamplesRequest(DatasetTrainConfig):
     class_label: int | None = Field(default=None, ge=0, lt=CLASS_COUNT)
-    split: Literal["all", "training", "validation", "testing", "holdout"] = "all"
+    split: Literal["all", "training", "validation", "testing"] = "all"
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=40, ge=1, le=40)
 
@@ -239,22 +233,18 @@ async def train_activation(
                 "status": "early_stopped" if should_stop_early else "running",
             }
         )
+        await asyncio.sleep(0)
         if should_stop_early:
             stopped_early = True
             break
-        await asyncio.sleep(config.delay_seconds)
 
     test_accuracy = float(
         (model.predict(data.testing_features) == data.testing_labels).mean()
-    )
-    holdout_accuracy = float(
-        (model.predict(data.holdout_features) == data.holdout_labels).mean()
     )
     return {
         "activation": activation_name,
         "epochs_completed": completed_epochs,
         "test_accuracy": test_accuracy,
-        "holdout_accuracy": holdout_accuracy,
         "stopped_early": stopped_early,
         **last_metrics,
     }
@@ -274,7 +264,6 @@ async def stream_training(
         train_percentage=config.train_percentage,
         validation_percentage=config.validation_percentage,
         test_percentage=config.test_percentage,
-        holdout_percentage=config.holdout_percentage,
         input_feature_count=config.input_feature_count,
     )
     event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -286,7 +275,6 @@ async def stream_training(
             "run_id": run_id,
             "activations": config.activations,
             "total_epochs": config.epochs,
-            "delay_seconds": config.delay_seconds,
             "difficulty": config.difficulty,
             "sample_count": config.sample_count,
             "class_count": CLASS_COUNT,
@@ -297,7 +285,6 @@ async def stream_training(
             "train_percentage": config.train_percentage,
             "validation_percentage": config.validation_percentage,
             "test_percentage": config.test_percentage,
-            "holdout_percentage": config.holdout_percentage,
             "early_stopping": config.early_stopping,
             "early_stopping_patience": config.early_stopping_patience,
             "early_stopping_min_delta": config.early_stopping_min_delta,
@@ -305,7 +292,6 @@ async def stream_training(
                 "training": list(data.training_features.shape),
                 "validation": list(data.validation_features.shape),
                 "testing": list(data.testing_features.shape),
-                "holdout": list(data.holdout_features.shape),
             },
         },
     ):
@@ -422,7 +408,6 @@ def _get_dataset_train_data(
     train_percentage: float,
     validation_percentage: float,
     test_percentage: float,
-    holdout_percentage: float,
     input_feature_count: int,
     random_seed: int,
 ) -> Any:
@@ -433,7 +418,6 @@ def _get_dataset_train_data(
         train_percentage=train_percentage,
         validation_percentage=validation_percentage,
         test_percentage=test_percentage,
-        holdout_percentage=holdout_percentage,
         input_feature_count=input_feature_count,
     )
 
@@ -445,7 +429,6 @@ def _train_data_cache_key(config: DatasetTrainConfig) -> tuple[Any, ...]:
         config.train_percentage,
         config.validation_percentage,
         config.test_percentage,
-        config.holdout_percentage,
         config.input_feature_count,
         config.random_seed,
     )
@@ -467,7 +450,6 @@ def _train_dataset_splits(data: Any) -> list[tuple[str, np.ndarray, np.ndarray]]
             data.validation_labels,
         ),
         ("testing", data.testing_features * feature_stds + feature_means, data.testing_labels),
-        ("holdout", data.holdout_features * feature_stds + feature_means, data.holdout_labels),
     ]
 
 
@@ -642,8 +624,8 @@ class InspectSession:
     model: SimpleANN
     feature_means: np.ndarray
     feature_stds: np.ndarray
-    holdout_features_raw: np.ndarray
-    holdout_labels: np.ndarray
+    test_features_raw: np.ndarray
+    test_labels: np.ndarray
     activation: str
     hidden_neuron_count: int
     hidden_layers: list[tuple[int, str]]
@@ -774,8 +756,8 @@ async def inspect_build(config: InspectBuildConfig) -> dict[str, Any]:
     )
     feature_means = data.training_features_raw.mean(axis=0)
     feature_stds = data.training_features_raw.std(axis=0)
-    holdout_features_raw = (
-        data.holdout_features * feature_stds + feature_means
+    test_features_raw = (
+        data.testing_features * feature_stds + feature_means
     )
 
     configured_layers = config.hidden_layers or [
@@ -806,8 +788,8 @@ async def inspect_build(config: InspectBuildConfig) -> dict[str, Any]:
         model=model,
         feature_means=feature_means,
         feature_stds=feature_stds,
-        holdout_features_raw=holdout_features_raw,
-        holdout_labels=data.holdout_labels,
+        test_features_raw=test_features_raw,
+        test_labels=data.testing_labels,
         activation=first_activation,
         hidden_neuron_count=hidden_layers[0][0],
         hidden_layers=hidden_layers,
@@ -844,12 +826,12 @@ async def inspect_forward(request: InspectForwardRequest) -> dict[str, Any]:
 async def inspect_sample(model_id: str) -> dict[str, Any]:
     session = _get_inspect_session(model_id)
     sample_index = int(
-        session.model.random_generator.integers(0, len(session.holdout_labels))
+        session.model.random_generator.integers(0, len(session.test_labels))
     )
-    features = session.holdout_features_raw[sample_index]
+    features = session.test_features_raw[sample_index]
     return {
         "features": [float(value) for value in features],
-        "label": int(session.holdout_labels[sample_index]),
+        "label": int(session.test_labels[sample_index]),
         "sample_index": sample_index,
     }
 

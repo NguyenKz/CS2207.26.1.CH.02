@@ -14,7 +14,6 @@ ActivationName = Literal[
     "sigmoid",
     "relu",
     "leaky_relu",
-    "softplus",
     "identity",
 ]
 
@@ -23,7 +22,6 @@ SUPPORTED_ACTIVATIONS: tuple[ActivationName, ...] = (
     "sigmoid",
     "relu",
     "leaky_relu",
-    "softplus",
     "identity",
 )
 CLASS_COUNT = 10
@@ -48,8 +46,6 @@ def apply_activation(values: np.ndarray, activation_name: str) -> np.ndarray:
         return np.maximum(0, values)
     if activation_name == "leaky_relu":
         return np.where(values > 0, values, 0.01 * values)
-    if activation_name == "softplus":
-        return np.logaddexp(0, values)
     if activation_name == "identity":
         return values
     raise ValueError(f"Unsupported activation: {activation_name}")
@@ -66,8 +62,6 @@ def activation_derivative(values: np.ndarray, activation_name: str) -> np.ndarra
         return (values > 0).astype(float)
     if activation_name == "leaky_relu":
         return np.where(values > 0, 1.0, 0.01)
-    if activation_name == "softplus":
-        return apply_activation(values, "sigmoid")
     if activation_name == "identity":
         return np.ones_like(values)
     raise ValueError(f"Unsupported activation: {activation_name}")
@@ -92,19 +86,15 @@ class ClassificationData:
     validation_one_hot_labels: np.ndarray
     testing_features: np.ndarray
     testing_labels: np.ndarray
-    holdout_features: np.ndarray
-    holdout_labels: np.ndarray
-    holdout_one_hot_labels: np.ndarray
 
 
 def prepare_classification_data(
     random_seed: int = 42,
     difficulty: float = 0.5,
     sample_count: int = DEFAULT_SAMPLE_COUNT,
-    train_percentage: float = 60.0,
+    train_percentage: float = 70.0,
     validation_percentage: float = 15.0,
     test_percentage: float = 15.0,
-    holdout_percentage: float = 10.0,
     input_feature_count: int = 8,
 ) -> ClassificationData:
     if not 0.0 <= difficulty <= 1.0:
@@ -113,7 +103,6 @@ def prepare_classification_data(
         train_percentage,
         validation_percentage,
         test_percentage,
-        holdout_percentage,
     )
     if any(percentage <= 0 for percentage in split_percentages):
         raise ValueError("all dataset percentages must be positive")
@@ -154,8 +143,7 @@ def prepare_classification_data(
     training_sample_count = round(sample_count * train_percentage / 100)
     validation_sample_count = round(sample_count * validation_percentage / 100)
     testing_sample_count = round(sample_count * test_percentage / 100)
-    holdout_sample_count = sample_count - training_sample_count - validation_sample_count - testing_sample_count
-    if min(training_sample_count, validation_sample_count, testing_sample_count, holdout_sample_count) < 3:
+    if min(training_sample_count, validation_sample_count, testing_sample_count) < 3:
         raise ValueError("each dataset split must contain at least 3 samples")
     training_indices, remaining_indices = train_test_split(
         all_indices,
@@ -166,17 +154,11 @@ def prepare_classification_data(
     validation_indices, remaining_indices = train_test_split(
         remaining_indices,
         train_size=validation_sample_count,
-        test_size=testing_sample_count + holdout_sample_count,
+        test_size=testing_sample_count,
         stratify=target_labels[remaining_indices],
         random_state=random_seed + 1,
     )
-    testing_indices, holdout_indices = train_test_split(
-        remaining_indices,
-        train_size=testing_sample_count,
-        test_size=holdout_sample_count,
-        stratify=target_labels[remaining_indices],
-        random_state=random_seed + 2,
-    )
+    testing_indices = remaining_indices
 
     training_features_raw = feature_matrix[training_indices]
     training_labels = target_labels[training_indices]
@@ -184,8 +166,6 @@ def prepare_classification_data(
     validation_labels = target_labels[validation_indices]
     testing_features_raw = feature_matrix[testing_indices]
     testing_labels = target_labels[testing_indices]
-    holdout_features_raw = feature_matrix[holdout_indices]
-    holdout_labels = target_labels[holdout_indices]
 
     training_feature_means = training_features_raw.mean(axis=0)
     training_feature_stds = training_features_raw.std(axis=0)
@@ -198,9 +178,6 @@ def prepare_classification_data(
     ) / training_feature_stds
     testing_features = (
         testing_features_raw - training_feature_means
-    ) / training_feature_stds
-    holdout_features = (
-        holdout_features_raw - training_feature_means
     ) / training_feature_stds
 
     return ClassificationData(
@@ -215,9 +192,6 @@ def prepare_classification_data(
         validation_one_hot_labels=one_hot_encode(validation_labels, CLASS_COUNT),
         testing_features=testing_features,
         testing_labels=testing_labels,
-        holdout_features=holdout_features,
-        holdout_labels=holdout_labels,
-        holdout_one_hot_labels=one_hot_encode(holdout_labels, CLASS_COUNT),
     )
 
 

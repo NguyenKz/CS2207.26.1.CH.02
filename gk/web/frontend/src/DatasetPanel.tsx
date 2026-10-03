@@ -9,7 +9,7 @@ const CLASS_LABELS = Array.from({ length: 10 }, (_, index) => index);
 const CLASS_COLORS = ["#d05a45", "#2c7a7b", "#b7862c", "#6b5ca5", "#377d5f", "#435466", "#b05a82", "#668e9b", "#a16d3d", "#596b46"];
 
 type DatasetTab = "predict" | "train";
-type SplitName = "all" | "training" | "validation" | "testing" | "holdout";
+type SplitName = "all" | "training" | "validation" | "testing";
 type DatasetTrainConfig = Pick<
   RunConfig,
   | "difficulty"
@@ -17,7 +17,6 @@ type DatasetTrainConfig = Pick<
   | "train_percentage"
   | "validation_percentage"
   | "test_percentage"
-  | "holdout_percentage"
   | "input_feature_count"
   | "random_seed"
 >;
@@ -561,7 +560,6 @@ function TrainDatasetView({ trainConfig }: { trainConfig: DatasetTrainConfig }):
     { value: "training", label: "Training" },
     { value: "validation", label: "Validation" },
     { value: "testing", label: "Testing" },
-    { value: "holdout", label: "Holdout" },
   ];
   return (
     <div className="dataset-view">

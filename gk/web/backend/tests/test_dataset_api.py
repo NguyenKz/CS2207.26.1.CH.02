@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from gk.web.backend.server import app
+from gk.web.backend.ann_core import SUPPORTED_ACTIVATIONS, prepare_classification_data
+from gk.web.backend.server import TrainConfig, app
 
 
 client = TestClient(app)
@@ -15,10 +16,9 @@ def train_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "difficulty": 0.7,
         "sample_count": 300,
-        "train_percentage": 60,
+        "train_percentage": 70,
         "validation_percentage": 15,
         "test_percentage": 15,
-        "holdout_percentage": 10,
         "input_feature_count": 8,
         "random_seed": 42,
     }
@@ -47,6 +47,7 @@ def test_train_preview_is_deterministic_and_filters_samples() -> None:
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
     assert sum(first.json()["split_counts"].values()) == 300
+    assert set(first.json()["split_counts"]) == {"training", "validation", "testing"}
 
     page = client.post(
         "/dataset/train/samples",
@@ -65,6 +66,12 @@ def test_train_dataset_rejects_invalid_filter_and_axes() -> None:
     )
     assert invalid_split.status_code == 422
 
+    invalid_holdout = client.post(
+        "/dataset/train/samples",
+        json=train_payload(split="holdout"),
+    )
+    assert invalid_holdout.status_code == 422
+
     invalid_axes = client.post(
         "/dataset/train/preview",
         json=train_payload(feature_x=2, feature_y=2),
@@ -72,10 +79,30 @@ def test_train_dataset_rejects_invalid_filter_and_axes() -> None:
     assert invalid_axes.status_code == 422
 
 
+def test_train_runtime_has_three_splits_and_no_softplus_delay() -> None:
+    config = TrainConfig()
+    assert "delay_seconds" not in config.model_dump()
+    assert "softplus" not in SUPPORTED_ACTIVATIONS
+
+    data = prepare_classification_data(sample_count=300, input_feature_count=8)
+    assert len(data.training_labels) == 210
+    assert len(data.validation_labels) == 45
+    assert len(data.testing_labels) == 45
+    assert not hasattr(data, "holdout_features")
+
+    try:
+        TrainConfig(activations=["softplus"])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Softplus should not be accepted by TrainConfig")
+
+
 def main() -> None:
     test_predict_dataset_metadata_and_class_page()
     test_train_preview_is_deterministic_and_filters_samples()
     test_train_dataset_rejects_invalid_filter_and_axes()
+    test_train_runtime_has_three_splits_and_no_softplus_delay()
     print("PASS: dataset API regression checks")
 
 
