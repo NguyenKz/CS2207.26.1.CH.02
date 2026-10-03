@@ -479,7 +479,7 @@ export function PredictPanel(): ReactElement {
     [result, selectedModelId],
   );
 
-  async function fetchSample(index: number): Promise<void> {
+  async function fetchSample(index: number): Promise<{ pixels: number[]; sampleIndex: number }> {
     setErrorMessage(null);
     const response = await fetch(`${API_BASE}/predict/sample?index=${index}`);
     if (!response.ok) {
@@ -495,6 +495,7 @@ export function PredictPanel(): ReactElement {
     setSampleLabel(sample.label);
     setResult(null);
     setStatus("ready");
+    return { pixels: nextPixels, sampleIndex: sample.index };
   }
 
   useEffect(() => {
@@ -548,14 +549,18 @@ export function PredictPanel(): ReactElement {
     if (!meta?.test_indices.length) return;
     const randomPosition = Math.floor(Math.random() * meta.test_indices.length);
     try {
-      await fetchSample(meta.test_indices[randomPosition]);
+      const sample = await fetchSample(meta.test_indices[randomPosition]);
+      await handlePredict(undefined, sample);
     } catch (error) {
       setStatus("error");
       setErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
-  async function handlePredict(nextDrawing?: number[]): Promise<void> {
+  async function handlePredict(
+    nextDrawing?: number[],
+    sampleInput?: { pixels: number[]; sampleIndex: number },
+  ): Promise<void> {
     const sequence = predictionSequenceRef.current + 1;
     predictionSequenceRef.current = sequence;
     setStatus("predicting");
@@ -564,7 +569,15 @@ export function PredictPanel(): ReactElement {
       const response = await fetch(`${API_BASE}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextDrawing !== undefined ? { drawing: nextDrawing } : sampleIndex == null ? { drawing } : { pixels, sample_index: sampleIndex }),
+        body: JSON.stringify(
+          sampleInput
+            ? { pixels: sampleInput.pixels, sample_index: sampleInput.sampleIndex }
+            : nextDrawing !== undefined
+              ? { drawing: nextDrawing }
+              : sampleIndex == null
+                ? { drawing }
+                : { pixels, sample_index: sampleIndex },
+        ),
       });
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
