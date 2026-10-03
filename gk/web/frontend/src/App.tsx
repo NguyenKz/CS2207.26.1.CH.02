@@ -389,11 +389,10 @@ function NetworkPipeline({
   ];
 
   return (
-    <section className="pipeline-panel" aria-labelledby="pipeline-title">
+    <section className="pipeline-panel" aria-label="Training pipeline">
       <div className="section-kicker">ANN BASICS</div>
       <div className="pipeline-heading">
         <div>
-          <h2 id="pipeline-title">One epoch, step by step</h2>
           <p>Inputs become activations, loss measures error, and updates change the weights.</p>
         </div>
         <div className="pipeline-metrics">

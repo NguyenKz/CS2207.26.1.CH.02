@@ -224,6 +224,25 @@
   flex: 1 1 0;
 }
 
+.predict-icon-button {
+  display: inline-grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.predict-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .predict-input-note {
   margin-top: 12px;
   color: var(--muted);
@@ -456,7 +475,25 @@
 .predict-activation-list {
   display: grid;
   gap: 8px;
+  height: clamp(180px, calc(100vh - 520px), 460px);
+  min-height: 0;
   margin-top: 8px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.predict-activation-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.predict-activation-list::-webkit-scrollbar-thumb {
+  background: var(--muted);
+}
+
+.predict-activation-list::-webkit-scrollbar-track {
+  background: var(--paper-deep);
 }
 
 .predict-activation-strip {
@@ -484,8 +521,8 @@
 
 .predict-activation-values {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(22px, 1fr));
+  gap: 2px;
 }
 
 .predict-activation-cell {
@@ -498,7 +535,7 @@
 .predict-activation-cell > span {
   display: block;
   width: 100%;
-  height: 20px;
+  height: 12px;
   border: 1px solid rgba(216, 211, 201, .8);
   background: var(--accent);
 }
@@ -509,11 +546,11 @@
 
 .predict-activation-cell small {
   color: var(--muted);
-  font: 8px var(--mono);
+  font: 7px var(--mono);
 }
 
 .predict-activation-cell code {
-  font: 9px var(--mono);
+  font: 7px var(--mono);
 }
 
 .predict-output-panel {
@@ -1323,6 +1360,20 @@
     grid-template-columns: 1fr;
   }
 
+  .predict-activation-list {
+    height: min(320px, 50vh);
+    min-height: 180px;
+  }
+
+  .predict-activation-values {
+    grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
+    gap: 1px;
+  }
+
+  .predict-activation-cell > span {
+    height: 9px;
+  }
+
   .predict-output-panel {
     padding: 14px 0 0;
     border-top: 1px solid var(--line);
@@ -1374,6 +1425,11 @@
   .predict-control-actions .button {
     width: 100%;
   }
+
+  .predict-control-actions .predict-icon-button {
+    width: 44px;
+    min-width: 44px;
+  }
 }
 
 @media (min-width: 1100px) {
@@ -1419,6 +1475,15 @@
   .app-shell:has(.predict-shell) .predict-result-column {
     min-height: 0;
     gap: 8px;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-column {
+    align-content: stretch;
+  }
+
+  .app-shell:has(.predict-shell) .predict-input-panel {
+    height: 100%;
+    box-sizing: border-box;
   }
 
   .app-shell:has(.predict-shell) .predict-input-panel,

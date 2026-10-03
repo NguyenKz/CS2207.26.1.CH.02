@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from "react";
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from "react";
 
 import { PredictDatasetView } from "./DatasetPanel";
 
@@ -144,15 +144,21 @@ const NormalizedPreview = memo(function NormalizedPreview({
   );
 });
 
-const FreehandCanvas = memo(function FreehandCanvas({
-  drawing,
-  onCommit,
-  downloadName,
-}: {
+type FreehandCanvasHandle = {
+  save: () => void;
+};
+
+type FreehandCanvasProps = {
   drawing: number[];
   onCommit: (drawing: number[]) => void;
   downloadName: string;
-}): ReactElement {
+};
+
+const FreehandCanvas = memo(forwardRef<FreehandCanvasHandle, FreehandCanvasProps>(function FreehandCanvas({
+  drawing,
+  onCommit,
+  downloadName,
+}, ref): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(drawing);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -249,6 +255,8 @@ const FreehandCanvas = memo(function FreehandCanvas({
     }, "image/png");
   }
 
+  useImperativeHandle(ref, () => ({ save: saveDrawing }), [drawing, downloadName]);
+
   return (
     <>
       <canvas
@@ -271,14 +279,9 @@ const FreehandCanvas = memo(function FreehandCanvas({
         onPointerUp={finishStroke}
         onPointerCancel={finishStroke}
       />
-      <div className="predict-canvas-actions">
-        <button className="button button-quiet" type="button" onClick={saveDrawing} disabled={drawing.every((value) => value === 0)}>
-          Save drawing (PNG)
-        </button>
-      </div>
     </>
   );
-});
+}));
 
 function ProbabilityBars({ probabilities, compact = false }: { probabilities: number[]; compact?: boolean }): ReactElement {
   return (
@@ -352,8 +355,7 @@ function ModelCard({
   );
 }
 
-function ActivationStrip({ layer }: { layer: LayerTrace }): ReactElement {
-  const values = layer.h;
+function ActivationStrip({ layer, values = layer.h }: { layer: LayerTrace; values?: number[] }): ReactElement {
   const maxAbs = Math.max(...values.map((value) => Math.abs(value)), 1);
   return (
     <div className="predict-activation-strip">
@@ -381,50 +383,6 @@ function ActivationStrip({ layer }: { layer: LayerTrace }): ReactElement {
   );
 }
 
-function ForwardFlow({ model, customDrawing, pixelSize }: { model: ModelResult; customDrawing: boolean; pixelSize: number }): ReactElement {
-  const preprocessingSteps = customDrawing ? [
-    ["DENOISE", "remove small noise"],
-    ["CROP", "keep largest ink"],
-    ["SQUARE", "resize crop to square"],
-    ["RESIZE", `area average to ${pixelSize}×${pixelSize}`],
-  ] : [];
-  return (
-    <div className="predict-forward-flow">
-      <div className="predict-flow-step predict-flow-input">
-        <span className="section-kicker">INPUT</span>
-        <strong>{customDrawing ? "128×128 ink" : `${pixelSize * pixelSize} pixels`}</strong>
-        <small>{customDrawing ? "freehand canvas" : `${pixelSize} × ${pixelSize} grayscale values`}</small>
-      </div>
-      {preprocessingSteps.map(([title, detail]) => (
-        <span className="predict-flow-layer" key={title}>
-          <span className="predict-flow-arrow" aria-hidden="true">→</span>
-          <div className="predict-flow-step is-preprocess">
-            <span className="section-kicker">{title}</span>
-            <strong>{title === "RESIZE" ? `${pixelSize}×${pixelSize} pixels` : title === "SQUARE" ? "square image" : title === "CROP" ? "largest region" : "clean ink"}</strong>
-            <small>{detail}</small>
-          </div>
-        </span>
-      ))}
-      <span className="predict-flow-arrow" aria-hidden="true">→</span>
-      <div className="predict-flow-step">
-        <span className="section-kicker">NORMALIZE</span>
-        <strong>StandardScaler</strong>
-        <small>same transform used offline</small>
-      </div>
-      {model.layers.map((layer) => (
-        <span className="predict-flow-layer" key={layer.index}>
-          <span className="predict-flow-arrow" aria-hidden="true">→</span>
-          <div className={`predict-flow-step ${layer.kind === "output" ? "is-output" : ""}`}>
-            <span className="section-kicker">{layer.kind === "output" ? "OUTPUT" : `LAYER ${layer.index + 1}`}</span>
-            <strong>{layer.neuron_count} units</strong>
-            <small>{layer.activation}</small>
-          </div>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 export function PredictPanel(): ReactElement {
   const [activeDemoTab, setActiveDemoTab] = useState<"prediction" | "dataset">("prediction");
   const [meta, setMeta] = useState<PredictMeta | null>(null);
@@ -438,12 +396,9 @@ export function PredictPanel(): ReactElement {
   const [status, setStatus] = useState<PredictStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const predictionSequenceRef = useRef(0);
+  const canvasControlRef = useRef<FreehandCanvasHandle>(null);
   const pixelSize = meta?.dataset.input_shape[0] ?? 8;
 
-  const selectedModelMeta = useMemo(
-    () => meta?.models.find((model) => model.id === selectedModelId) ?? meta?.models[0] ?? null,
-    [meta, selectedModelId],
-  );
   const selectedModelResult = useMemo(
     () => result?.models.find((model) => model.id === selectedModelId) ?? result?.models[0] ?? null,
     [result, selectedModelId],
@@ -656,7 +611,7 @@ export function PredictPanel(): ReactElement {
                 <p>{displayLabel}</p>
               </div>
               <div className="predict-pixel-frame">
-                <FreehandCanvas drawing={drawing} onCommit={commitDrawing} downloadName={drawingFileName} />
+                <FreehandCanvas ref={canvasControlRef} drawing={drawing} onCommit={commitDrawing} downloadName={drawingFileName} />
                 <div className="predict-pixel-scale"><span>freehand</span><span>128×128 canvas</span><span>ink</span></div>
                 <NormalizedPreview pixels={normalizedPixels} pixelSize={pixelSize} />
                 {result?.preprocessing && (
@@ -676,14 +631,20 @@ export function PredictPanel(): ReactElement {
                   {status === "predicting" ? "Predicting…" : "Predict this digit"}
                 </button>
                 <button className="button button-quiet" type="button" onClick={clearPixels}>Clear grid</button>
+                <button
+                  className="button button-quiet predict-icon-button"
+                  type="button"
+                  aria-label="Save drawing as PNG"
+                  title="Save drawing as PNG"
+                  onClick={() => canvasControlRef.current?.save()}
+                  disabled={drawing.every((value) => value === 0)}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 3v11m0 0 4-4m-4 4-4-4M4 20h16" />
+                  </svg>
+                </button>
               </div>
               <p className="predict-input-note">Draw freely. The backend removes noise, crops the ink, squares it and resizes it to {pixelSize}×{pixelSize} before prediction.</p>
-            </section>
-            <section className="predict-dataset-note">
-              <span className="section-kicker">DATASET</span>
-              <strong>{meta.dataset.name}</strong>
-              <p>{meta.dataset.sample_count.toLocaleString("en-US")} samples · {meta.dataset.feature_count} input features · {meta.dataset.class_count} classes</p>
-              <code>{meta.preprocessing.name} · test set {meta.test_indices.length} samples</code>
             </section>
           </aside>
 
@@ -692,7 +653,6 @@ export function PredictPanel(): ReactElement {
               <div className="section-heading compact">
                 <div>
                   <div className="section-kicker">PREDICTION BOARD</div>
-                  <h2>Same input, four different capacities</h2>
                 </div>
                 <p>{result ? `Predicted from ${result.sample_index == null ? "custom pixels" : `test sample ${result.sample_index}`}` : "Choose a sample, then run one forward pass."}</p>
               </div>
@@ -722,41 +682,22 @@ export function PredictPanel(): ReactElement {
               </div>
             </section>
 
-            <section className="panel-surface predict-flow-panel" aria-label="Selected model forward pass">
-              <div className="section-heading compact">
-                <div>
-                  <div className="section-kicker">FORWARD PASS</div>
-                  <h2>{selectedModelMeta?.name ?? "Select a model"}</h2>
-                </div>
-                <p>{selectedModelMeta ? `${formatInteger(selectedModelMeta.parameter_count)} parameters · test ${formatPercent(selectedModelMeta.test_accuracy)}` : "Run Predict to reveal the trace."}</p>
-              </div>
-              {selectedModelResult ? (
-                <>
-                  <ForwardFlow model={selectedModelResult} customDrawing={result?.preprocessing != null} pixelSize={pixelSize} />
-                  <div className="predict-trace-grid">
-                    <div>
-                      <div className="section-kicker">LAYER ACTIVATIONS</div>
-                      <div className="predict-activation-list">
-                        {selectedModelResult.layers.map((layer) => (
-                          <ActivationStrip layer={layer} key={layer.index} />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="predict-output-panel">
-                      <div className="section-kicker">OUTPUT PROBABILITY</div>
-                      <ProbabilityBars probabilities={selectedModelResult.probabilities} />
-                      {result && (
-                        <p className="predict-explanation">
-                          The winning output is <strong>class {selectedModelResult.predicted_class}</strong> with confidence <strong>{formatPercent(selectedModelResult.confidence)}</strong>.
-                        </p>
-                      )}
-                    </div>
+            {selectedModelResult && (
+              <section className="panel-surface predict-flow-panel" aria-label="Layer activations">
+                <div className="predict-activation-panel">
+                  <div className="section-kicker">LAYER ACTIVATIONS</div>
+                  <div className="predict-activation-list">
+                    {selectedModelResult.layers.map((layer) => (
+                      <ActivationStrip
+                        layer={layer}
+                        values={layer.kind === "output" ? selectedModelResult.probabilities : layer.h}
+                        key={layer.index}
+                      />
+                    ))}
                   </div>
-                </>
-              ) : (
-                <p className="predict-model-empty">Choose a sample and run Predict to reveal this model's forward pass.</p>
-              )}
-            </section>
+                </div>
+              </section>
+            )}
           </main>
         </div>
       )}
