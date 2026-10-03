@@ -132,7 +132,7 @@ const NormalizedPreview = memo(function NormalizedPreview({
   return (
     <div className="predict-normalized-block">
       <div className="predict-normalized-heading">
-        <span className="section-kicker">NORMALIZED INPUT · {pixelSize}×{pixelSize}</span>
+        <span className="section-kicker">{pixelSize}×{pixelSize}</span>
         <small>{pixels ? "sent to model" : "appears after Predict"}</small>
       </div>
       <div
@@ -380,7 +380,7 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
             aria-controls={`predict-insight-${tab}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === "training" ? "TRAINING" : "BENCHMARK"}
+            {tab === "training" ? "TRAINING" : "COMPARISON"}
           </button>
         ))}
       </nav>
@@ -406,7 +406,7 @@ function PredictInsights({ meta }: { meta: PredictMeta }): ReactElement {
         <div id="predict-insight-benchmark" className="predict-insight-panel" role="tabpanel">
           <div className="predict-insight-heading">
             <div>
-              <span className="section-kicker">COMPARERATION</span>
+              <span className="section-kicker">COMPARISON</span>
               <strong>Validation and test accuracy</strong>
             </div>
             <small>higher is better</small>
