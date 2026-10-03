@@ -616,7 +616,7 @@ function App(): ReactElement {
       <header className="topbar app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ANN</div>
-          <div><strong>Training Lab</strong><span>ANN from scratch · review · predict · inspect</span></div>
+          <div><strong>Training Lab</strong><span>ANN from scratch · review · demo · inspect</span></div>
         </div>
         <nav className="tabs" aria-label="Demo sections">
           <button
@@ -631,7 +631,7 @@ function App(): ReactElement {
             type="button"
             onClick={() => setActiveTab("predict")}
           >
-            Predict
+            Demo
           </button>
           <button
             className={`tab ${activeTab === "inspect" ? "tab-active" : ""}`}
