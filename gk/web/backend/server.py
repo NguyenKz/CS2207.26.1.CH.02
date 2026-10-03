@@ -6,7 +6,8 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from functools import lru_cache
+from typing import Any, Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -85,15 +86,74 @@ class TrainConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_dataset_split(self) -> "TrainConfig":
-        split_total = (
-            self.train_percentage
-            + self.validation_percentage
-            + self.test_percentage
-            + self.holdout_percentage
+        _validate_dataset_split(
+            self.train_percentage,
+            self.validation_percentage,
+            self.test_percentage,
+            self.holdout_percentage,
         )
-        if abs(split_total - 100.0) > 1e-6:
-            raise ValueError("all dataset percentages must sum to 100")
         return self
+
+
+def _validate_dataset_split(
+    train_percentage: float,
+    validation_percentage: float,
+    test_percentage: float,
+    holdout_percentage: float,
+) -> None:
+    split_total = train_percentage + validation_percentage + test_percentage + holdout_percentage
+    if abs(split_total - 100.0) > 1e-6:
+        raise ValueError("all dataset percentages must sum to 100")
+
+
+class DatasetTrainConfig(BaseModel):
+    difficulty: float = Field(default=0.7, ge=0.0, le=1.0)
+    sample_count: int = Field(default=DEFAULT_SAMPLE_COUNT, ge=30, le=10000)
+    train_percentage: float = Field(default=60.0, gt=0.0, lt=100.0)
+    validation_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
+    test_percentage: float = Field(default=15.0, gt=0.0, lt=100.0)
+    holdout_percentage: float = Field(default=10.0, gt=0.0, lt=100.0)
+    input_feature_count: int = Field(default=32)
+    random_seed: int = 42
+
+    @field_validator("input_feature_count")
+    @classmethod
+    def validate_input_feature_count(cls, value: int) -> int:
+        if value not in SUPPORTED_INPUT_FEATURE_COUNTS:
+            raise ValueError(
+                f"input_feature_count must be one of: {list(SUPPORTED_INPUT_FEATURE_COUNTS)}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_dataset_split(self) -> "DatasetTrainConfig":
+        _validate_dataset_split(
+            self.train_percentage,
+            self.validation_percentage,
+            self.test_percentage,
+            self.holdout_percentage,
+        )
+        return self
+
+
+class DatasetTrainPreviewRequest(DatasetTrainConfig):
+    feature_x: int = Field(default=0, ge=0)
+    feature_y: int = Field(default=1, ge=0)
+
+    @model_validator(mode="after")
+    def validate_feature_axes(self) -> "DatasetTrainPreviewRequest":
+        if self.feature_x >= self.input_feature_count or self.feature_y >= self.input_feature_count:
+            raise ValueError("feature axes must be inside input_feature_count")
+        if self.feature_x == self.feature_y:
+            raise ValueError("feature axes must be different")
+        return self
+
+
+class DatasetTrainSamplesRequest(DatasetTrainConfig):
+    class_label: int | None = Field(default=None, ge=0, lt=CLASS_COUNT)
+    split: Literal["all", "training", "validation", "testing", "holdout"] = "all"
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=40, ge=1, le=40)
 
 
 def validation_error_message(error: Exception) -> str:
@@ -355,6 +415,98 @@ def _get_digits_artifact() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
+@lru_cache(maxsize=1)
+def _get_dataset_train_data(
+    difficulty: float,
+    sample_count: int,
+    train_percentage: float,
+    validation_percentage: float,
+    test_percentage: float,
+    holdout_percentage: float,
+    input_feature_count: int,
+    random_seed: int,
+) -> Any:
+    return prepare_classification_data(
+        random_seed=random_seed,
+        difficulty=difficulty,
+        sample_count=sample_count,
+        train_percentage=train_percentage,
+        validation_percentage=validation_percentage,
+        test_percentage=test_percentage,
+        holdout_percentage=holdout_percentage,
+        input_feature_count=input_feature_count,
+    )
+
+
+def _train_data_cache_key(config: DatasetTrainConfig) -> tuple[Any, ...]:
+    return (
+        config.difficulty,
+        config.sample_count,
+        config.train_percentage,
+        config.validation_percentage,
+        config.test_percentage,
+        config.holdout_percentage,
+        config.input_feature_count,
+        config.random_seed,
+    )
+
+
+def _get_train_dataset(config: DatasetTrainConfig) -> Any:
+    return _get_dataset_train_data(*_train_data_cache_key(config))
+
+
+def _train_dataset_splits(data: Any) -> list[tuple[str, np.ndarray, np.ndarray]]:
+    feature_means = data.training_features_raw.mean(axis=0)
+    feature_stds = data.training_features_raw.std(axis=0)
+    feature_stds = np.where(feature_stds < 1e-8, 1.0, feature_stds)
+    return [
+        ("training", data.training_features_raw, data.training_labels),
+        (
+            "validation",
+            data.validation_features * feature_stds + feature_means,
+            data.validation_labels,
+        ),
+        ("testing", data.testing_features * feature_stds + feature_means, data.testing_labels),
+        ("holdout", data.holdout_features * feature_stds + feature_means, data.holdout_labels),
+    ]
+
+
+def _class_counts(labels: np.ndarray) -> list[int]:
+    return [int(np.count_nonzero(labels == class_label)) for class_label in range(CLASS_COUNT)]
+
+
+def _train_scatter_points(
+    data: Any,
+    feature_x: int,
+    feature_y: int,
+    points_per_class: int = 120,
+) -> list[dict[str, Any]]:
+    split_rows = _train_dataset_splits(data)
+    features = np.vstack([rows[1] for rows in split_rows])
+    labels = np.concatenate([rows[2] for rows in split_rows])
+    split_labels = np.concatenate(
+        [np.full(len(rows[1]), split_name, dtype=object) for split_name, *rows in split_rows]
+    )
+    points: list[dict[str, Any]] = []
+    for class_label in range(CLASS_COUNT):
+        class_indices = np.flatnonzero(labels == class_label)
+        if len(class_indices) > points_per_class:
+            class_indices = class_indices[
+                np.linspace(0, len(class_indices) - 1, points_per_class, dtype=int)
+            ]
+        points.extend(
+            {
+                "index": int(index),
+                "label": int(labels[index]),
+                "split": str(split_labels[index]),
+                "x": float(features[index, feature_x]),
+                "y": float(features[index, feature_y]),
+            }
+            for index in class_indices
+        )
+    return points
+
+
 @app.get("/predict/meta")
 async def predict_meta() -> dict[str, Any]:
     artifact = _get_digits_artifact()
@@ -365,6 +517,95 @@ async def predict_meta() -> dict[str, Any]:
         "test_indices": get_test_indices(artifact),
         "default_sample_index": int(artifact.get("demo_sample_index", get_test_indices(artifact)[0])),
         "models": public_model_metadata(artifact),
+    }
+
+
+@app.get("/dataset/predict/meta")
+async def dataset_predict_meta() -> dict[str, Any]:
+    artifact = _get_digits_artifact()
+    labels = np.asarray(artifact["test_labels"], dtype=int)
+    representatives = []
+    for class_label in range(CLASS_COUNT):
+        class_indices = np.flatnonzero(labels == class_label)
+        if len(class_indices):
+            representatives.append(serialize_sample(artifact, int(class_indices[0])))
+    return {
+        "dataset": artifact["dataset"],
+        "preprocessing": {"name": artifact["preprocessing"]["name"]},
+        "class_counts": _class_counts(labels),
+        "representatives": representatives,
+    }
+
+
+@app.get("/dataset/predict/samples")
+async def dataset_predict_samples(
+    label: int | None = Query(default=None, ge=0, le=CLASS_COUNT - 1),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=40, ge=1, le=40),
+) -> dict[str, Any]:
+    artifact = _get_digits_artifact()
+    labels = np.asarray(artifact["test_labels"], dtype=int)
+    indices = np.flatnonzero(labels == label) if label is not None else np.arange(len(labels))
+    page_indices = indices[offset:offset + limit]
+    return {
+        "items": [serialize_sample(artifact, int(index)) for index in page_indices],
+        "offset": offset,
+        "limit": limit,
+        "total": int(len(indices)),
+        "has_more": offset + len(page_indices) < len(indices),
+    }
+
+
+@app.post("/dataset/train/preview")
+async def dataset_train_preview(request: DatasetTrainPreviewRequest) -> dict[str, Any]:
+    data = _get_train_dataset(request)
+    split_counts = {
+        split_name: int(len(features))
+        for split_name, features, _labels in _train_dataset_splits(data)
+    }
+    labels = np.concatenate([rows[2] for rows in _train_dataset_splits(data)])
+    return {
+        "sample_count": int(len(labels)),
+        "class_count": CLASS_COUNT,
+        "class_names": list(data.class_names),
+        "feature_names": list(data.feature_names),
+        "class_counts": _class_counts(labels),
+        "split_counts": split_counts,
+        "feature_x": request.feature_x,
+        "feature_y": request.feature_y,
+        "points": _train_scatter_points(data, request.feature_x, request.feature_y),
+    }
+
+
+@app.post("/dataset/train/samples")
+async def dataset_train_samples(request: DatasetTrainSamplesRequest) -> dict[str, Any]:
+    data = _get_train_dataset(request)
+    rows = _train_dataset_splits(data)
+    features = np.vstack([row[1] for row in rows])
+    labels = np.concatenate([row[2] for row in rows])
+    split_labels = np.concatenate(
+        [np.full(len(row[1]), split_name, dtype=object) for split_name, *row in rows]
+    )
+    indices = np.arange(len(labels))
+    if request.class_label is not None:
+        indices = indices[labels == request.class_label]
+    if request.split != "all":
+        indices = indices[split_labels[indices] == request.split]
+    page_indices = indices[request.offset:request.offset + request.limit]
+    return {
+        "items": [
+            {
+                "index": int(index),
+                "label": int(labels[index]),
+                "split": str(split_labels[index]),
+                "features": [float(value) for value in features[index]],
+            }
+            for index in page_indices
+        ],
+        "offset": request.offset,
+        "limit": request.limit,
+        "total": int(len(indices)),
+        "has_more": request.offset + len(page_indices) < len(indices),
     }
 
 

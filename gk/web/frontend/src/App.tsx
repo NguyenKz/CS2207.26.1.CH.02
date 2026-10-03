@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type ReactElement } from "react";
 
 import { InspectPanel } from "./InspectPanel";
 import { PredictPanel } from "./PredictPanel";
+import { DatasetPanel } from "./DatasetPanel";
 
 const ACTIVATIONS = [
   "tanh",
@@ -21,7 +22,7 @@ type ActivationName = (typeof ACTIVATIONS)[number];
 type RunState = "idle" | "connecting" | "running" | "completed" | "cancelled" | "error";
 type ConnectionState = "disconnected" | "connecting" | "connected";
 
-type RunConfig = {
+export type RunConfig = {
   epochs: number;
   delay_seconds: number;
   learning_rate: number;
@@ -461,7 +462,7 @@ function ActivationCard({
 }
 
 function App(): ReactElement {
-  const [activeTab, setActiveTab] = useState<"train" | "predict" | "inspect">("train");
+  const [activeTab, setActiveTab] = useState<"train" | "predict" | "inspect" | "dataset">("train");
   const [runConfig, setRunConfig] = useState<RunConfig>(DEFAULT_CONFIG);
   const [runState, setRunState] = useState<RunState>("idle");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -643,6 +644,13 @@ function App(): ReactElement {
           >
             Inspect
           </button>
+          <button
+            className={`tab ${activeTab === "dataset" ? "tab-active" : ""}`}
+            type="button"
+            onClick={() => setActiveTab("dataset")}
+          >
+            Dataset
+          </button>
         </nav>
         <div className={`connection-pill connection-${connectionState}`}>
           <span className="status-mark" /> {activeTab === "train" ? connectionState : `http ${activeTab}`}
@@ -653,6 +661,8 @@ function App(): ReactElement {
         <PredictPanel />
       ) : activeTab === "inspect" ? (
         <InspectPanel />
+      ) : activeTab === "dataset" ? (
+        <DatasetPanel trainConfig={runConfig} />
       ) : (
         <>
           <section className="lesson-header" aria-label="Training lab header">
