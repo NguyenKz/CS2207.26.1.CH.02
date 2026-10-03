@@ -1,4 +1,4 @@
-"""Browser acceptance checks for the Dataset tab.
+"""Browser acceptance checks for the Dataset subtab inside Demo.
 
 Run with the FastAPI backend on port 6788 and Vite on port 5113, for example:
 source .venv/bin/activate && python /path/to/with_server.py \
@@ -22,7 +22,8 @@ SCREENSHOT_DIR = Path(os.environ.get("DATASET_SCREENSHOT_DIR", "/tmp/ann-dataset
 def open_dataset(page: Page) -> None:
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="Dataset", exact=True).click()
+    page.get_by_role("button", name="Demo", exact=True).click()
+    page.get_by_role("tab", name="DATASET", exact=True).click()
 
 
 def assert_no_horizontal_overflow(page: Page) -> None:
@@ -34,6 +35,11 @@ def test_review_tab(page: Page) -> None:
     page.set_default_timeout(8_000)
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
+    assert page.get_by_role("button", name="Inspect", exact=True).count() == 0
+    assert page.get_by_role("button", name="Dataset", exact=True).count() == 0
+    page.get_by_role("button", name="Demo", exact=True).click()
+    assert page.get_by_role("tab", name="PREDICTION BOARD", exact=True).count() == 1
+    assert page.get_by_role("tab", name="DATASET", exact=True).count() == 1
     page.get_by_role("button", name="Review", exact=True).click()
     assert page.locator(".activation-card").count() == 5
     assert page.get_by_text("Total parameters", exact=True).count() == 1
@@ -83,45 +89,35 @@ def test_successful_browse(page: Page) -> None:
     page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
 
     open_dataset(page)
-    page.wait_for_selector(".dataset-representative-grid")
-    assert page.locator(".dataset-representative-grid .dataset-digit-tile").count() == 10
-    assert any("/dataset/predict/samples" in url and "limit=40" in url for url in requests)
+    page.wait_for_selector(".dataset-sample-grid")
+    assert page.get_by_text("Quick look at all digits", exact=True).count() == 0
+    assert page.get_by_text("SELECTED SAMPLE", exact=True).count() == 0
+    assert page.locator(".dataset-sample-grid .dataset-digit-tile").count() == 60
+    assert page.locator(".dataset-sample-grid img[loading='lazy']").count() == 60
+    assert page.locator(".dataset-sample-grid .dataset-digit-tile").count() < 100
+    assert any("/dataset/predict/samples" in url and "limit=60" in url for url in requests)
     page.screenshot(path=SCREENSHOT_DIR / "predict-overview.png", full_page=True)
 
     class_button = page.locator(".dataset-class-button").nth(8)
     class_button.focus()
     page.keyboard.press("Enter")
-    page.wait_for_function("document.querySelectorAll('.dataset-sample-grid .dataset-digit-tile').length === 40")
-    assert any("label=7" in url and "limit=40" in url for url in requests)
+    page.wait_for_function("document.querySelectorAll('.dataset-sample-grid .dataset-digit-tile').length === 60")
+    assert any("label=7" in url and "limit=60" in url for url in requests)
     page.screenshot(path=SCREENSHOT_DIR / "predict-class-grid.png", full_page=True)
 
     page.locator(".dataset-sample-grid .dataset-digit-tile").first.click()
-    assert page.get_by_text("Test sample #", exact=False).count() == 1
+    assert page.locator(".dataset-sample-grid .dataset-digit-tile.is-selected").count() == 1
     page.screenshot(path=SCREENSHOT_DIR / "predict-detail.png", full_page=True)
-    load_more = page.get_by_role("button", name="Load more samples")
-    if load_more.count():
-        load_more.click()
-        page.wait_for_function("document.querySelectorAll('.dataset-sample-grid .dataset-digit-tile').length >= 80")
-
-    page.get_by_role("tab", name="Train dataset").click()
-    page.wait_for_selector(".dataset-scatter")
-    page.wait_for_selector(".dataset-sample-table tbody tr")
-    assert page.locator(".dataset-class-legend button").count() == 10
-    assert page.locator(".dataset-feature-selectors select").first.locator("option:disabled").count() == 1
-    page.locator(".dataset-feature-selectors select").first.select_option("2")
-    page.wait_for_timeout(500)
-    page.locator(".dataset-class-legend button").first.press("Space")
-    row = page.locator(".dataset-sample-table tbody tr").first
-    row.focus()
-    row.press("Enter")
-    assert page.get_by_text("SELECTED VECTOR", exact=True).count() == 1
-    page.screenshot(path=SCREENSHOT_DIR / "train-scatter-table.png", full_page=True)
+    browser_panel = page.locator(".dataset-browser-panel")
+    browser_panel.hover()
+    page.mouse.wheel(0, 5_000)
+    page.wait_for_function("document.querySelectorAll('.dataset-sample-grid .dataset-digit-tile').length >= 120")
 
     for width, height in ((360, 800), (390, 844), (768, 1024), (1280, 900), (1440, 900)):
         page.set_viewport_size({"width": width, "height": height})
         page.wait_for_timeout(150)
         assert_no_horizontal_overflow(page)
-        page.screenshot(path=SCREENSHOT_DIR / f"train-{width}.png", full_page=True)
+        page.screenshot(path=SCREENSHOT_DIR / f"dataset-{width}.png", full_page=True)
 
     assert not console_errors, console_errors
 
@@ -135,12 +131,13 @@ def test_error_and_empty_states(page: Page) -> None:
     assert page.get_by_text("simulated dataset outage", exact=True).count() == 1
     page.unroute("**/dataset/predict/meta")
     page.get_by_role("button", name="Retry").click()
-    page.wait_for_selector(".dataset-representative-grid")
+    page.wait_for_selector(".dataset-sample-grid")
 
     page.route("**/dataset/predict/samples**", lambda route: route.fulfill(status=200, content_type="application/json", body='{"items":[],"offset":0,"limit":40,"total":0,"has_more":false}'))
     page.reload()
     page.wait_for_load_state("networkidle")
-    page.get_by_role("button", name="Dataset", exact=True).click()
+    page.get_by_role("button", name="Demo", exact=True).click()
+    page.get_by_role("tab", name="DATASET", exact=True).click()
     page.get_by_text("No samples", exact=True).wait_for()
     assert page.get_by_text("No samples", exact=True).count() == 1
 

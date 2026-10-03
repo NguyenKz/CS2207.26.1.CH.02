@@ -1,8 +1,6 @@
 import { useMemo, useRef, useState, type ReactElement } from "react";
 
-import { InspectPanel } from "./InspectPanel";
 import { PredictPanel } from "./PredictPanel";
-import { DatasetPanel } from "./DatasetPanel";
 
 const ACTIVATIONS = [
   "tanh",
@@ -458,7 +456,7 @@ function ActivationCard({
 }
 
 function App(): ReactElement {
-  const [activeTab, setActiveTab] = useState<"train" | "predict" | "inspect" | "dataset">("train");
+  const [activeTab, setActiveTab] = useState<"train" | "predict">("train");
   const [runConfig, setRunConfig] = useState<RunConfig>(DEFAULT_CONFIG);
   const [runState, setRunState] = useState<RunState>("idle");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -616,7 +614,7 @@ function App(): ReactElement {
       <header className="topbar app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">ANN</div>
-          <div><strong>Training Lab</strong><span>ANN from scratch · review · demo · inspect</span></div>
+          <div><strong>Training Lab</strong><span>ANN from scratch · review · demo</span></div>
         </div>
         <nav className="tabs" aria-label="Demo sections">
           <button
@@ -633,33 +631,13 @@ function App(): ReactElement {
           >
             Demo
           </button>
-          <button
-            className={`tab ${activeTab === "inspect" ? "tab-active" : ""}`}
-            type="button"
-            onClick={() => setActiveTab("inspect")}
-          >
-            Inspect
-          </button>
-          <button
-            className={`tab ${activeTab === "dataset" ? "tab-active" : ""}`}
-            type="button"
-            onClick={() => setActiveTab("dataset")}
-          >
-            Dataset
-          </button>
         </nav>
         <div className={`connection-pill connection-${connectionState}`}>
-          <span className="status-mark" /> {activeTab === "train" ? connectionState : `http ${activeTab}`}
+          <span className="status-mark" /> {activeTab === "train" ? connectionState : "http demo"}
         </div>
       </header>
 
-      {activeTab === "predict" ? (
-        <PredictPanel />
-      ) : activeTab === "inspect" ? (
-        <InspectPanel />
-      ) : activeTab === "dataset" ? (
-        <DatasetPanel trainConfig={runConfig} />
-      ) : (
+      {activeTab === "predict" ? <PredictPanel /> : (
         <>
           <section className="lesson-header" aria-label="Training lab header">
             <div className="lesson-body">

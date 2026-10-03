@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import Any, Literal
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.websockets import WebSocketDisconnected, WebSocketState
 
@@ -24,6 +26,13 @@ from .ann_core import (
     SimpleANN,
     prepare_classification_data,
 )
+from .dataset_images import (
+    IMAGE_DIR,
+    DatasetImagesError,
+    load_dataset_catalog,
+    public_dataset_item,
+)
+from .digits_config import DATASET_META_PATH, PIXEL_SIZE
 from .digits_predict import (
     DRAWING_COUNT,
     DigitsArtifactError,
@@ -43,6 +52,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.mount(
+    "/dataset/images",
+    StaticFiles(directory=str(IMAGE_DIR), check_dir=False),
+    name="dataset-images",
 )
 
 
@@ -506,16 +520,38 @@ async def predict_meta() -> dict[str, Any]:
 @app.get("/dataset/predict/meta")
 async def dataset_predict_meta() -> dict[str, Any]:
     artifact = _get_digits_artifact()
-    labels = np.asarray(artifact["test_labels"], dtype=int)
+    try:
+        catalog = load_dataset_catalog()
+    except DatasetImagesError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    try:
+        dataset_file_metadata = json.loads(DATASET_META_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        dataset_file_metadata = {}
+    manifest = catalog["manifest"]
+    dataset = artifact["dataset"] | {
+        "name": dataset_file_metadata.get("name", artifact["dataset"].get("name")),
+        "description": "Normalized MNIST images used by the four offline models.",
+        "sample_count": int(manifest["sample_count"]),
+        "training_sample_count": 60000,
+        "test_sample_count": 10000,
+        "input_shape": [PIXEL_SIZE, PIXEL_SIZE],
+        "feature_count": PIXEL_SIZE * PIXEL_SIZE,
+        "pixel_min": 0,
+        "pixel_max": 1,
+        "original_input_shape": dataset_file_metadata.get("raw_shape", {}).get("train", [28, 28])[1:],
+        "source_url": dataset_file_metadata.get("source_url"),
+    }
     representatives = []
-    for class_label in range(CLASS_COUNT):
-        class_indices = np.flatnonzero(labels == class_label)
-        if len(class_indices):
-            representatives.append(serialize_sample(artifact, int(class_indices[0])))
+    for class_items in catalog["class_items"].values():
+        if class_items:
+            representatives.append(public_dataset_item(class_items[0]))
     return {
-        "dataset": artifact["dataset"],
+        "dataset": dataset,
         "preprocessing": {"name": artifact["preprocessing"]["name"]},
-        "class_counts": _class_counts(labels),
+        "class_counts": manifest["class_counts"],
+        "split_counts": manifest["split_counts"],
+        "image_ready": True,
         "representatives": representatives,
     }
 
@@ -524,18 +560,20 @@ async def dataset_predict_meta() -> dict[str, Any]:
 async def dataset_predict_samples(
     label: int | None = Query(default=None, ge=0, le=CLASS_COUNT - 1),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=40, ge=1, le=40),
+    limit: int = Query(default=60, ge=1, le=60),
 ) -> dict[str, Any]:
-    artifact = _get_digits_artifact()
-    labels = np.asarray(artifact["test_labels"], dtype=int)
-    indices = np.flatnonzero(labels == label) if label is not None else np.arange(len(labels))
-    page_indices = indices[offset:offset + limit]
+    try:
+        catalog = load_dataset_catalog()
+    except DatasetImagesError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    items = catalog["items"] if label is None else catalog["class_items"].get(label, ())
+    page_items = items[offset:offset + limit]
     return {
-        "items": [serialize_sample(artifact, int(index)) for index in page_indices],
+        "items": [public_dataset_item(item) for item in page_items],
         "offset": offset,
         "limit": limit,
-        "total": int(len(indices)),
-        "has_more": offset + len(page_indices) < len(indices),
+        "total": int(len(items)),
+        "has_more": offset + len(page_items) < len(items),
     }
 
 

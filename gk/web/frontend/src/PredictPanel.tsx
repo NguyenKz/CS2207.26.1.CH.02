@@ -1,4 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement } from "react";
+
+import { PredictDatasetView } from "./DatasetPanel";
 
 const API_BASE = "http://localhost:6788";
 const DRAWING_SIZE = 128;
@@ -424,6 +426,7 @@ function ForwardFlow({ model, customDrawing, pixelSize }: { model: ModelResult; 
 }
 
 export function PredictPanel(): ReactElement {
+  const [activeDemoTab, setActiveDemoTab] = useState<"prediction" | "dataset">("prediction");
   const [meta, setMeta] = useState<PredictMeta | null>(null);
   const [pixels, setPixels] = useState<number[]>([]);
   const [drawing, setDrawing] = useState<number[]>(blankDrawing);
@@ -575,20 +578,55 @@ export function PredictPanel(): ReactElement {
   const displayLabel = sampleLabel == null ? "Custom drawing" : `True label · ${sampleLabel}`;
   const drawingFileName = `digit-${sampleLabel == null ? "custom" : `sample-${sampleIndex ?? "unknown"}-label-${sampleLabel}`}-${selectedModelResult ? `${selectedModelId}-predicted-${selectedModelResult.predicted_class}` : "unpredicted"}`;
 
+  function handleDemoTabKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const nextTab = event.key === "Home"
+      ? "prediction"
+      : event.key === "End"
+        ? "dataset"
+        : event.key === "ArrowRight" || event.key === "ArrowDown"
+          ? "dataset"
+          : "prediction";
+    setActiveDemoTab(nextTab);
+    window.requestAnimationFrame(() => document.getElementById(`demo-tab-${nextTab}`)?.focus());
+  }
+
   return (
     <div className="predict-shell">
-      <section className="lesson-header predict-hero" aria-label="Predict demo header">
-        <div className="lesson-body inspect-lesson-body">
-          <div className="lesson-intro">
-            <div className="lesson-copy">
-              <div className="section-kicker">LESSON 03 / PREDICT</div>
-              <h1>See one digit travel through four models</h1>
-              <p className="intro-copy">The weights are trained offline. This page makes one forward pass visible.</p>
-            </div>
-          </div>
-        </div>
-      </section>
+      <nav className="predict-subtabs" role="tablist" aria-label="Demo views">
+        <button
+          id="demo-tab-prediction"
+          className={`predict-subtab ${activeDemoTab === "prediction" ? "is-active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeDemoTab === "prediction"}
+          aria-controls="prediction-board-panel"
+          onKeyDown={handleDemoTabKeyDown}
+          onClick={() => setActiveDemoTab("prediction")}
+        >
+          PREDICTION BOARD
+        </button>
+        <button
+          id="demo-tab-dataset"
+          className={`predict-subtab ${activeDemoTab === "dataset" ? "is-active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeDemoTab === "dataset"}
+          aria-controls="dataset-browser-panel"
+          onKeyDown={handleDemoTabKeyDown}
+          onClick={() => setActiveDemoTab("dataset")}
+        >
+          DATASET
+        </button>
+      </nav>
 
+      {activeDemoTab === "dataset" ? (
+        <div id="dataset-browser-panel" role="tabpanel" aria-label="MNIST dataset browser">
+          <PredictDatasetView />
+        </div>
+      ) : (
+        <div id="prediction-board-panel" role="tabpanel" aria-label="Prediction board">
       {status === "loading" && (
         <section className="panel-surface predict-state" aria-live="polite">
           <span className="section-kicker">LOADING MODEL ARTIFACT</span>
@@ -720,6 +758,8 @@ export function PredictPanel(): ReactElement {
               )}
             </section>
           </main>
+        </div>
+      )}
         </div>
       )}
     </div>

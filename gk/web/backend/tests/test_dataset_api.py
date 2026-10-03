@@ -30,7 +30,11 @@ def test_predict_dataset_metadata_and_class_page() -> None:
     metadata = client.get("/dataset/predict/meta")
     assert metadata.status_code == 200
     body = metadata.json()
-    assert sum(body["class_counts"]) == body["dataset"]["test_sample_count"]
+    assert body["dataset"]["sample_count"] == 70000
+    assert body["dataset"]["input_shape"] == [28, 28]
+    assert body["dataset"]["feature_count"] == 784
+    assert sum(body["class_counts"]) == body["dataset"]["sample_count"]
+    assert body["split_counts"] == {"training": 48000, "validation": 12000, "testing": 10000}
     assert len(body["representatives"]) == 10
 
     page = client.get("/dataset/predict/samples", params={"label": 7, "limit": 40})
@@ -38,6 +42,10 @@ def test_predict_dataset_metadata_and_class_page() -> None:
     page_body = page.json()
     assert len(page_body["items"]) == 40
     assert all(item["label"] == 7 for item in page_body["items"])
+    assert all(item["image_url"].endswith(".webp") for item in page_body["items"])
+    image = client.get(page_body["items"][0]["image_url"])
+    assert image.status_code == 200
+    assert image.headers["content-type"] == "image/webp"
 
 
 def test_train_preview_is_deterministic_and_filters_samples() -> None:

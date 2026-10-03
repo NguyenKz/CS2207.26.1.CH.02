@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type RefObject } from "react";
 
 import type { RunConfig } from "./App";
 
 const API_BASE = "http://localhost:6788";
-const PAGE_SIZE = 40;
-const PIXEL_MAX = 1;
+const PAGE_SIZE = 60;
 const CLASS_LABELS = Array.from({ length: 10 }, (_, index) => index);
 const CLASS_COLORS = ["#d05a45", "#2c7a7b", "#b7862c", "#6b5ca5", "#377d5f", "#435466", "#b05a82", "#668e9b", "#a16d3d", "#596b46"];
 
@@ -22,10 +21,12 @@ type DatasetTrainConfig = Pick<
 >;
 
 type PredictSample = {
+  id: string;
+  source: "train" | "test";
   index: number;
-  pixels: number[][];
+  split: "training" | "validation" | "testing";
   label: number;
-  is_test_sample: boolean;
+  image_url: string;
 };
 
 type PredictMeta = {
@@ -43,8 +44,9 @@ type PredictMeta = {
     original_input_shape?: [number, number];
     source_url?: string;
   };
-  preprocessing: { name: string };
   class_counts: number[];
+  split_counts: Record<Exclude<SplitName, "all">, number>;
+  image_ready: boolean;
   representatives: PredictSample[];
 };
 
@@ -108,22 +110,16 @@ function formatCount(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-function PixelGrid({ pixels, label }: { pixels: number[][]; label: string }): ReactElement {
-  const values = pixels.flat();
+function DatasetImage({ sample, detail = false }: { sample: PredictSample; detail?: boolean }): ReactElement {
   return (
-    <div
-      className="dataset-pixel-grid"
-      role="img"
-      aria-label={label}
-      style={{ gridTemplateColumns: `repeat(${pixels[0]?.length ?? 8}, minmax(0, 1fr))` }}
-    >
-      {values.map((value, index) => (
-        <span
-          key={index}
-          className="dataset-pixel-cell"
-          style={{ backgroundColor: `rgba(251, 250, 246, ${Math.max(0.03, Math.min(1, value / PIXEL_MAX))})` }}
-        />
-      ))}
+    <div className={`dataset-image-frame ${detail ? "is-detail" : ""}`}>
+      <img
+        src={`${API_BASE}${sample.image_url}`}
+        alt={`Digit ${sample.label}, ${sample.split} sample ${sample.index}`}
+        loading="lazy"
+        width={28}
+        height={28}
+      />
     </div>
   );
 }
@@ -174,8 +170,8 @@ function SampleTile({
       aria-label={`Class ${sample.label}, sample ${sample.index}`}
       onClick={onSelect}
     >
-      <PixelGrid pixels={sample.pixels} label={`Digit ${sample.label}, sample ${sample.index}`} />
-      <span><strong>{sample.label}</strong><small>#{sample.index}</small></span>
+      <DatasetImage sample={sample} />
+      <span><strong>{sample.label}</strong><small>{sample.split} · #{sample.index}</small></span>
     </button>
   );
 }
@@ -185,11 +181,13 @@ function LoadMore({
   loading,
   onLoad,
   endLabel,
+  scrollRootRef,
 }: {
   hasMore: boolean;
   loading: boolean;
   onLoad: () => void;
   endLabel: string;
+  scrollRootRef?: RefObject<HTMLElement | null>;
 }): ReactElement {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -198,10 +196,10 @@ function LoadMore({
     if (!node || !hasMore || loading || typeof IntersectionObserver === "undefined") return undefined;
     const observer = new IntersectionObserver((entries) => {
       if (entries[0]?.isIntersecting) onLoad();
-    }, { rootMargin: "240px" });
+    }, { root: scrollRootRef?.current ?? null, rootMargin: "240px" });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loading, onLoad]);
+  }, [hasMore, loading, onLoad, scrollRootRef]);
 
   if (!hasMore) return <p className="dataset-end-note">{endLabel}</p>;
   return (
@@ -243,7 +241,7 @@ function ClassSelector({
   );
 }
 
-function PredictDatasetView(): ReactElement {
+export function PredictDatasetView(): ReactElement {
   const [meta, setMeta] = useState<PredictMeta | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<number | null>(null);
@@ -258,6 +256,7 @@ function PredictDatasetView(): ReactElement {
   const metaRequestRef = useRef<AbortController | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const loadingRef = useRef(false);
+  const browserPanelRef = useRef<HTMLElement | null>(null);
 
   const loadMeta = useCallback(async (): Promise<void> => {
     metaRequestRef.current?.abort();
@@ -332,74 +331,42 @@ function PredictDatasetView(): ReactElement {
   const selectedLabel = selectedClass === null ? "all classes" : `class ${selectedClass}`;
   return (
     <div className="dataset-view">
-      <section className="panel-surface dataset-overview-panel">
-        <div className="section-heading compact">
-          <div><div className="section-kicker">PREDICT DATASET</div><h2>{meta.dataset.name}</h2></div>
-          <p>{meta.dataset.description}</p>
+      <section className="panel-surface dataset-summary-bar">
+        <div className="dataset-summary-title">
+          <div className="section-kicker">PREDICT DATASET</div>
+          <h2>{meta.dataset.name}</h2>
         </div>
-        <div className="dataset-metric-grid">
-          <Metric label="Test samples" value={formatCount(meta.dataset.test_sample_count ?? meta.dataset.sample_count)} />
+        <div className="dataset-metric-grid dataset-predict-metric-grid">
+          <Metric label="All samples" value={formatCount(meta.dataset.sample_count)} />
           <Metric label="Classes" value={String(meta.dataset.class_count)} />
           <Metric label="Model input" value={`${meta.dataset.input_shape[0]}×${meta.dataset.input_shape[1]}`} />
-          <Metric label="Preprocessing" value={meta.preprocessing.name} />
         </div>
       </section>
 
       <div className="dataset-predict-layout">
         <aside className="panel-surface dataset-class-filter-panel">
-          <div className="section-heading compact">
-            <div><div className="section-kicker">FILTER BY CLASS</div><h2>Choose a class</h2></div>
-            <p>All shows every class. Choose a class to view only its samples.</p>
-          </div>
           <ClassSelector counts={meta.class_counts} selectedClass={selectedClass} onSelect={setSelectedClass} />
         </aside>
 
         <div className="dataset-predict-main">
-          <section className="dataset-feature-grid">
-            <div className="panel-surface dataset-contact-panel">
-              <div className="section-heading compact">
-                <div><div className="section-kicker">ONE FROM EACH CLASS</div><h2>Quick look at all digits</h2></div>
-                <p>Choose a class to open the full sample list.</p>
-              </div>
-              <div className="dataset-representative-grid">
-                {meta.representatives.map((sample) => (
-                  <SampleTile
-                    key={sample.index}
-                    sample={sample}
-                    selected={selectedSample?.index === sample.index}
-                    onSelect={() => {
-                      setSelectedClass(sample.label);
-                      setSelectedSample(sample);
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="panel-surface dataset-detail-panel">
-              <div className="section-kicker">SELECTED SAMPLE</div>
-              {selectedSample ? (
-                <>
-                  <PixelGrid pixels={selectedSample.pixels} label={`Selected digit ${selectedSample.label}`} />
-                  <h2>Digit {selectedSample.label}</h2>
-                  <p>Test sample #{selectedSample.index}. This is the {meta.dataset.input_shape[0]}×{meta.dataset.input_shape[1]} image after normalization, exactly as it is sent to the model.</p>
-                  {meta.dataset.source_url && <a href={meta.dataset.source_url} target="_blank" rel="noreferrer">MNIST source</a>}
-                </>
-              ) : <p className="dataset-empty-copy">Choose a sample to inspect it.</p>}
-            </div>
-          </section>
-
-          <section className="panel-surface dataset-browser-panel">
+          <section ref={browserPanelRef} className="panel-surface dataset-browser-panel">
             <div className="section-heading compact">
               <div><div className="section-kicker">SAMPLE BROWSER</div><h2>{formatCount(total)} samples in {selectedLabel}</h2></div>
-              <p>Scroll to load 40 more samples.</p>
+              <p>Scroll to load {PAGE_SIZE} more samples.</p>
             </div>
             {sampleError && <div className="dataset-inline-error" role="alert">{sampleError} <button type="button" onClick={() => void loadSamples(samples.length === 0)}>Retry</button></div>}
             {loading && !samples.length ? <StateMessage title="Loading samples..." detail="Only one small page loads at a time to keep the page responsive." /> : samples.length ? (
               <>
                 <div className="dataset-sample-grid">
-                  {samples.map((sample) => <SampleTile key={sample.index} sample={sample} selected={selectedSample?.index === sample.index} onSelect={() => setSelectedSample(sample)} />)}
+                  {samples.map((sample) => <SampleTile key={sample.id} sample={sample} selected={selectedSample?.id === sample.id} onSelect={() => setSelectedSample(sample)} />)}
                 </div>
-                <LoadMore hasMore={hasMore} loading={loadingMore} onLoad={() => void loadSamples(false)} endLabel="All filtered samples are shown." />
+                <LoadMore
+                  hasMore={hasMore}
+                  loading={loadingMore}
+                  onLoad={() => void loadSamples(false)}
+                  endLabel="All filtered samples are shown."
+                  scrollRootRef={browserPanelRef}
+                />
               </>
             ) : <StateMessage title="No samples" detail="The current filter returned no samples." />}
           </section>

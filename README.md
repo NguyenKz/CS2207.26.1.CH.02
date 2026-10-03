@@ -133,10 +133,19 @@ Notebook tổng hợp nhanh: [`mnist_ann_training.ipynb`](./gk/mds/mnist_ann_tra
 
 Ba notebook chuyên dụng nên chạy theo thứ tự:
 
-1. [`mnist_dataset.ipynb`](./gk/mds/mnist_dataset.ipynb): tạo `gk/web/backend/artifacts/mnist_dataset/NxN/` gồm ảnh raw 28×28, ảnh normalized theo kích thước cấu hình, `dataset_meta.json` và `split.json`.
+1. [`mnist_dataset.ipynb`](./gk/mds/mnist_dataset.ipynb): tạo `gk/web/backend/artifacts/mnist_dataset/28x28/` gồm ảnh raw/normalized, `dataset_meta.json` và `split.json`.
 2. [`mnist_models.ipynb`](./gk/mds/mnist_models.ipynb): đọc, kiểm tra cấu hình cố định và ghi `mnist_model_config.json` vào thư mục kích thước hiện tại.
 3. [`mnist_train.ipynb`](./gk/mds/mnist_train.ipynb): đọc thư mục dataset, train và ghi `mnist_weights.json` cùng `digits_models_NxN.json`.
 4. [`mnist_test.ipynb`](./gk/mds/mnist_test.ipynb): đọc file weight, chọn index và kiểm tra mẫu qua bốn model.
+
+Sau khi tạo dataset, xuất ảnh WebP local cho subtab Dataset trong Demo:
+
+```bash
+source .venv/bin/activate
+python -m gk.web.backend.dataset_images
+```
+
+Thư mục `gk/web/backend/artifacts/mnist_dataset/28x28/images/` chỉ dùng runtime và không được commit.
 
 Notebook train đọc ảnh 28×28 local rồi flatten thành 784 feature ngay trước khi đưa vào model. Dataset và artifact của pipeline nằm riêng trong thư mục `28x28`.
 
@@ -158,11 +167,11 @@ Người dùng cũng có thể vẽ tự do trên canvas. Backend sẽ khử nhi
 6. Dùng sơ đồ `4 -> 8 -> 3`, loss curve và confusion matrix khi thuyết trình.
 7. Chạy tab Train để quan sát training realtime.
 8. Chạy tab Predict để so sánh bốn model trên chữ số viết tay thật.
-9. Chạy tab Inspect để xem chi tiết forward pass của một mạng.
+9. Trong tab Demo, chuyển giữa `PREDICTION BOARD` và `DATASET` để xem forward pass hoặc duyệt 70.000 ảnh MNIST.
 
 ## Phạm vi hiện tại
 
-Project hiện có notebook NumPy tự xây và web demo React + FastAPI. Tab Train stream từng epoch qua WebSocket; tab Predict dùng weight train offline và tab Inspect cho phép thiết kế, build và xem chi tiết một ANN.
+Project hiện có notebook NumPy tự xây và web demo React + FastAPI. Tab Review stream từng epoch qua WebSocket; tab Demo dùng weight train offline, hiển thị prediction board và duyệt dataset MNIST bằng ảnh lazy-load.
 
 ## Nguồn học tập
 

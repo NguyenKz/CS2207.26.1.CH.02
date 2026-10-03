@@ -29,6 +29,37 @@
   max-width: 100%;
 }
 
+.predict-subtabs {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.predict-subtab {
+  min-height: 48px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 10px 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font: 500 10px var(--mono);
+  letter-spacing: .1em;
+}
+
+.predict-subtab:hover,
+.predict-subtab.is-active {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+.predict-subtab:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 3px;
+}
+
 .predict-hero .lesson-body {
   padding: 18px 22px 16px;
 }
@@ -658,11 +689,64 @@
   padding: 18px;
 }
 
+.dataset-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 18px;
+}
+
+.dataset-summary-title {
+  flex: 0 1 260px;
+  min-width: 190px;
+}
+
+.dataset-summary-title h2 {
+  margin-top: 5px;
+}
+
+.dataset-summary-bar .dataset-metric-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.dataset-summary-bar .dataset-metric {
+  border-top: 0;
+  border-left: 2px solid var(--teal);
+  background: transparent;
+}
+
+.dataset-browser-panel {
+  height: min(760px, calc(100vh - 300px));
+  min-height: 360px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.dataset-browser-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dataset-browser-panel::-webkit-scrollbar-thumb {
+  background: var(--muted);
+}
+
+.dataset-browser-panel::-webkit-scrollbar-track {
+  background: var(--paper-deep);
+}
+
 .dataset-metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 16px;
+}
+
+.dataset-predict-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .dataset-metric {
@@ -693,7 +777,24 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
-  margin-top: 14px;
+  max-height: min(420px, calc(100vh - 320px));
+  margin-top: 0;
+  overflow-y: scroll;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.dataset-class-selector::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dataset-class-selector::-webkit-scrollbar-thumb {
+  background: var(--muted);
+}
+
+.dataset-class-selector::-webkit-scrollbar-track {
+  background: var(--paper-deep);
 }
 
 .dataset-class-button {
@@ -753,6 +854,8 @@
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
 }
 
 .dataset-digit-tile:hover,
@@ -775,6 +878,29 @@
 .dataset-digit-tile small {
   color: var(--muted);
   font: 8px var(--mono);
+}
+
+.dataset-image-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid #303b41;
+  background: #172027;
+}
+
+.dataset-image-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.dataset-image-frame.is-detail {
+  width: min(100%, 240px);
+  margin: 10px 0 14px;
 }
 
 .dataset-pixel-grid {
@@ -1073,9 +1199,31 @@
   .dataset-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .dataset-summary-bar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .dataset-summary-title {
+    flex-basis: 100%;
+  }
+
+  .dataset-predict-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
+  .predict-subtabs {
+    gap: 14px;
+  }
+
+  .predict-subtab {
+    flex: 1;
+    text-align: center;
+  }
+
   .dataset-hero .lesson-body {
     padding: 18px 14px 16px;
   }
@@ -1089,16 +1237,39 @@
     padding: 14px;
   }
 
+  .dataset-summary-bar {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .dataset-summary-title {
+    min-width: 0;
+  }
+
+  .dataset-browser-panel {
+    height: min(560px, calc(100vh - 300px));
+    min-height: 360px;
+  }
+
   .dataset-representative-grid,
   .dataset-sample-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dataset-predict-metric-grid {
+    grid-template-columns: 1fr;
   }
 
   .dataset-class-button {
     min-height: 48px;
   }
 
-  .dataset-detail-panel .dataset-pixel-grid {
+  .dataset-class-selector {
+    max-height: 220px;
+  }
+
+  .dataset-image-frame.is-detail {
     width: min(100%, 220px);
   }
 
