@@ -19,3 +19,5 @@ gk/web/backend/model_runs/*/shards/
 .mypy_cache/
 .DS_Store
 *.py[cod]
+
+CK/papers/

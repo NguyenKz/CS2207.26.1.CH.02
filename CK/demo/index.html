@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <meta name="description" content="Simplicial SMOTE demo landing page: choose a dataset and compare oversampling methods">
+    <title>Simplicial SMOTE — demo intro</title>
+    <link rel="stylesheet" href="./styles.css?v=20261118-howto">
+  </head>
+  <body class="landing-body">
+    <header class="page-header landing-header">
+      <div>
+        <p class="eyebrow">KDD ’25 · interactive demo</p>
+        <h1>Simplicial SMOTE</h1>
+        <p class="lede">
+          SMOTE generates points along k-NN edges; Simplicial SMOTE generates points inside a simplex
+          using barycentric coordinates. Choose a dataset below to enter the demo.
+        </p>
+      </div>
+      <a
+        class="source-link"
+        href="https://github.com/av-savchenko/simplical-smote"
+        target="_blank"
+        rel="noreferrer"
+      >
+        Code paper ↗
+      </a>
+    </header>
+
+    <main class="landing-main">
+      <section class="panel landing-scenario" aria-labelledby="scenario-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Demo scenario</p>
+            <h2 id="scenario-title">Compare oversampling, then evaluate on test data</h2>
+          </div>
+        </div>
+        <ol class="landing-scenario-steps">
+          <li>
+            <strong>Generate samples</strong>
+            <span id="scenario-sample">
+              Oversample the minority class with <code>k = 5</code>, <code>p = 3</code>,
+              and <code>seed = 2207</code>; generate
+              <code>m = n⁻ − n⁺</code> points.
+            </span>
+          </li>
+          <li>
+            <strong>Train</strong>
+            <span>
+              Train <code>LogisticRegression(C=1.2, class_weight=None, max_iter=2000, random_state=seed)</code>
+              on the balanced training set.
+            </span>
+          </li>
+          <li>
+            <strong>Results</strong>
+            <span>Evaluate on the test set: recall, precision, F1, FN, FP (and the boundary on the canvas).</span>
+          </li>
+          <li>
+            <strong>Compare</strong>
+            <span>Three methods: <em>Original</em> (no oversampling), <em>SMOTE</em>, and <em>Simplicial SMOTE</em>.</span>
+          </li>
+        </ol>
+        <p class="landing-glossary" id="scenario-glossary">
+          <code>n⁺</code> = minority (positive, the class to augment) ·
+          <code>n⁻</code> = majority (negative, the target count) ·
+          <code>m = n⁻ − n⁺</code> to balance the two classes.
+        </p>
+      </section>
+
+      <section class="landing-datasets" aria-labelledby="datasets-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Synthetic 2D</p>
+            <h2 id="datasets-title">Choose a dataset</h2>
+          </div>
+        </div>
+        <div id="dataset-grid" class="dataset-grid" role="listbox" aria-label="Dataset picker"></div>
+      </section>
+
+      <section class="panel landing-selected" aria-live="polite">
+        <div class="landing-selected-copy">
+            <p class="eyebrow">Selected</p>
+          <h2 id="selected-name">—</h2>
+          <p id="selected-blurb" class="muted">Loading…</p>
+          <dl class="landing-stats" id="selected-stats"></dl>
+        </div>
+        <div class="landing-selected-action">
+          <a id="start-demo" class="button-primary landing-cta" href="./demo.html?dataset=fraud">
+            Start demo
+          </a>
+          <p id="landing-status" class="status" role="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./landing.js?v=20261118-howto"></script>
+  </body>
+</html>
