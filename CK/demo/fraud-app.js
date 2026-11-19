@@ -56,7 +56,8 @@ function poolChoiceLabel(item) {
   const size = Number(item?.pool_size) || 0;
   const index = Number(item?.pool_index) || 0;
   if (size <= 0) return "pool —";
-  return `cluster #${index + 1}/${size}`;
+  const reuse = Number(item?.parent_reuse_count) || 0;
+  return `cluster #${index + 1}/${size}${reuse > 1 ? ` · reused ${reuse}×` : ""}`;
 }
 
 function drawPlotCallout(plot, lines, alphas) {
@@ -122,13 +123,14 @@ function stepCalcLines(item, stepIndex) {
     const size = Number(item.pool_size) || 0;
     const lines = [
       `pool size = ${size || "—"}`,
+      item.parent_reused ? `same parent simplex · used ${item.parent_reuse_count}×` : "",
       `random → ${poolChoiceLabel(item)}`,
     ];
     labels.forEach((label, index) => {
       const point = parentPoints[index];
       lines.push(point ? `${label} = ${fmtPoint(point)}` : label);
     });
-    return lines;
+    return lines.filter(Boolean);
   }
 
   if (stepIndex === 1) {
@@ -198,6 +200,7 @@ const state = {
   dataset: DATASET,
   animTime: 0,
   commitBurst: 0,
+  debugLastRenderKey: "",
 };
 
 document.head.insertAdjacentHTML("beforeend", `<link rel="stylesheet" href="./fraud.css">`);
@@ -901,11 +904,12 @@ function drawPlot(ui, result) {
     if (phase === 0) {
       const lines = [
         `Pool size = ${Number(item.pool_size) || "—"}`,
+        item.parent_reused ? `same parent simplex · used ${item.parent_reuse_count}×` : "",
         progress > 0.28 ? `random → ${poolChoiceLabel(item)}` : "random → …",
         ...((progress > 0.55 ? parents : []).map((parent, index) => {
           const label = `P${(item.parents[index] ?? index) + 1}`;
           return `${label} = ${fmtPoint(parent)}`;
-        })),
+        })).filter(Boolean),
       ];
       drawPlotCallout(
         plot,
@@ -1153,6 +1157,13 @@ function drawPlot(ui, result) {
 function draw() {
   const result = state.results.get(state.active);
   const ui = layout();
+  const renderKey = `${state.active}:${state.itemIndex}:${state.phaseIndex}:${state.visibleSynthetic}`;
+  if (renderKey !== state.debugLastRenderKey) {
+    state.debugLastRenderKey = renderKey;
+    // #region agent log
+    fetch('http://127.0.0.1:7774/ingest/ed864637-66de-47c5-97ca-87c515c63574',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'efd190'},body:JSON.stringify({sessionId:'efd190',runId:'initial',hypothesisId:'D',location:'fraud-app.js:1170',message:'Canvas render state changed',data:{active:state.active,itemIndex:state.itemIndex,phaseIndex:state.phaseIndex,visibleSynthetic:state.visibleSynthetic,timelineLength:result?.timeline?.length||0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }
   state.hitRegions = [];
   ctx.clearRect(0, 0, state.viewport.width, state.viewport.height);
   ctx.fillStyle = COLORS.bg;
@@ -1247,6 +1258,9 @@ async function runAll() {
       if (!response.ok) throw new Error(`Backend ${response.status}`);
       const data = await response.json();
       state.results.set(method.id, data);
+      // #region agent log
+      fetch('http://127.0.0.1:7774/ingest/ed864637-66de-47c5-97ca-87c515c63574',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'efd190'},body:JSON.stringify({sessionId:'efd190',runId:'initial',hypothesisId:'E',location:'fraud-app.js:1280',message:'Frontend received method result',data:{method:method.id,timelineLength:data.timeline?.length||0,firstParents:(data.timeline||[]).slice(0,12).map((item)=>item.parents),firstPoints:(data.timeline||[]).slice(0,12).map((item)=>item.point)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       state.active = method.id;
       resetTimeline(data, false);
       state.status = `${method.label} loaded`;

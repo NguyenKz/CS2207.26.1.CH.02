@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +19,7 @@ from sklearn.neighbors import kneighbors_graph
 
 DEMO_DIR = Path(__file__).resolve().parents[1]
 VENDORED_REPO = DEMO_DIR / "vendor" / "simplical-smote"
+DEBUG_LOG = DEMO_DIR.parents[1] / ".cursor" / "debug-efd190.log"
 sys.path.insert(0, str(VENDORED_REPO))
 
 from ssmote import SMOTE, SimplicialSMOTE  # noqa: E402
@@ -206,11 +209,40 @@ def clique_pool(points: np.ndarray, k: int) -> list[list[int]]:
 
 
 def attach_pool_choice(metadata: list[dict], pool_size: int) -> list[dict]:
-    size = max(int(pool_size), 1)
-    for index, item in enumerate(metadata):
+    parent_ids: dict[tuple[int, ...], int] = {}
+    parent_counts: dict[tuple[int, ...], int] = {}
+    for item in metadata:
+        key = tuple(sorted(int(parent) for parent in item.get("parents", [])))
+        parent_counts[key] = parent_counts.get(key, 0) + 1
+    for item in metadata:
+        key = tuple(sorted(int(parent) for parent in item.get("parents", [])))
+        if key not in parent_ids:
+            parent_ids[key] = len(parent_ids)
         item["pool_size"] = int(pool_size)
-        item["pool_index"] = index % size
+        item["pool_index"] = parent_ids[key]
+        item["parent_reuse_count"] = parent_counts[key]
+        item["parent_reused"] = parent_counts[key] > 1
+        item["unique_parent_count"] = len(parent_ids)
     return metadata
+
+
+def debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    # #region agent log
+    try:
+        DEBUG_LOG.parent.mkdir(exist_ok=True)
+        with DEBUG_LOG.open("a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps({
+                "sessionId": "efd190",
+                "runId": "initial",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "message": message,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            }) + "\n")
+    except OSError:
+        pass
+    # #endregion
 
 
 def train_model(points: np.ndarray, labels: np.ndarray, seed: int) -> LogisticRegression:
@@ -263,6 +295,9 @@ def animation_timeline(
                 "dimension": int(item["dimension"]),
                 "pool_size": int(item.get("pool_size", 0)),
                 "pool_index": int(item.get("pool_index", index)),
+                "parent_reuse_count": int(item.get("parent_reuse_count", 1)),
+                "parent_reused": bool(item.get("parent_reused", False)),
+                "unique_parent_count": int(item.get("unique_parent_count", 0)),
                 "point": {
                     "x": float(item["point"][0]),
                     "y": float(item["point"][1]),
@@ -313,6 +348,14 @@ def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.nd
     else:
         parent_rows = np.asarray(simplices)
         pool_size = len(parent_rows)
+    debug_log("A/B/C", "server.py:339", "Sampler parent pool prepared", {
+        "method": request.method,
+        "synthetic_count": len(synthetic),
+        "parent_rows_count": len(parent_rows),
+        "pool_size": pool_size,
+        "first_parent_rows": parent_rows[:12].tolist(),
+        "minority_count": len(minority),
+    })
     # Animation λ: sample e~Exp(1) then normalize (Dir(1..1)), so the UI can show the arithmetic.
     # Train/metrics still use `synthetic` from the official sampler above.
     random = np.random.default_rng(request.seed)
@@ -338,7 +381,36 @@ def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.nd
             "exp_draws": [float(value) for value in exp_draws],
             "dimension": max(len(parents) - 1, 0),
         })
+    debug_log("A/C/E", "server.py:365", "Timeline metadata prepared", {
+        "method": request.method,
+        "timeline_count": len(metadata),
+        "first_timeline": [
+            {
+                "parents": item["parents"],
+                "point": item["point"],
+                "pool_index": item.get("pool_index"),
+            }
+            for item in metadata[:12]
+        ],
+    })
     metadata = attach_pool_choice(metadata, pool_size if pool_size else len(parent_rows))
+    debug_log("A", "server.py:389", "Parent reuse labels attached", {
+        "method": request.method,
+        "pool_size": pool_size,
+        "unique_parent_count": len({
+            tuple(item.get("parents", []))
+            for item in metadata
+        }),
+        "first_reuse_flags": [
+            {
+                "parents": item["parents"],
+                "pool_index": item["pool_index"],
+                "parent_reused": item["parent_reused"],
+                "parent_reuse_count": item["parent_reuse_count"],
+            }
+            for item in metadata[:12]
+        ],
+    })
     return np.concatenate((train_x, synthetic)), np.concatenate((train_y, np.ones(len(synthetic)))), metadata
 
 
