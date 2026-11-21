@@ -611,7 +611,7 @@ def run(request: RunRequest) -> dict:
         "budget_pct": request.budget_pct,
         "classifier": "KNeighborsClassifier(n_neighbors=5)",
         "normalization": "StandardScaler fitted on training data only",
-        "evaluation": "single fixed synthetic holdout",
+        "evaluation": "single fixed synthetic holdout", 
         "p_vertices": request.p,
         "simplex_dimension": request.p - 1,
     }
