@@ -1,7 +1,10 @@
 const API = "http://127.0.0.1:8000";
 const STORAGE_KEY = "ssmote-demo-dataset";
-const BUDGET_KEY = "ssmote-demo-budget";
-const BUDGET_PRESETS = [0.1, 0.3, 0.7, 1.0];
+try {
+  localStorage.removeItem("ssmote-demo-budget");
+} catch {
+  /* ignore */
+}
 
 const FALLBACK = [
   {
@@ -78,31 +81,11 @@ const selectedStats = document.querySelector("#selected-stats");
 const startDemo = document.querySelector("#start-demo");
 const statusEl = document.querySelector("#landing-status");
 const scenarioSample = document.querySelector("#scenario-sample");
-const budgetChips = document.querySelector("#budget-chips");
-const budgetCount = document.querySelector("#budget-count");
-const budgetReadout = document.querySelector("#budget-readout");
-
-function loadBudget() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(BUDGET_KEY) || "null");
-    if (raw && (raw.mode === "pct" || raw.mode === "count")) {
-      return {
-        mode: raw.mode,
-        pct: BUDGET_PRESETS.includes(Number(raw.pct)) ? Number(raw.pct) : 1.0,
-        count: Number.isFinite(Number(raw.count)) && Number(raw.count) >= 0 ? Number(raw.count) : null,
-      };
-    }
-  } catch {
-    /* ignore */
-  }
-  return { mode: "pct", pct: 1.0, count: null };
-}
 
 const state = {
   datasets: FALLBACK,
   selected: localStorage.getItem(STORAGE_KEY) || "fraud",
   previews: new Map(),
-  budget: loadBudget(),
 };
 
 function fmtRatio(value) {
@@ -117,69 +100,16 @@ function fullM(item) {
   return Math.max(0, Number(item.n_majority) - Number(item.n_minority));
 }
 
-function resolvedNSynth(item) {
-  const m = fullM(item);
-  if (state.budget.mode === "count" && Number.isFinite(state.budget.count)) {
-    return Math.min(Math.max(0, Math.floor(state.budget.count)), m);
-  }
-  const pct = state.budget.pct || 1;
-  if (!m || pct <= 0) return 0;
-  return Math.min(m, Math.max(1, Math.round(m * pct)));
-}
-
-function persistBudget() {
-  localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budget));
-}
-
 function demoHref() {
   const params = new URLSearchParams();
   params.set("dataset", state.selected);
-  if (state.budget.mode === "count" && Number.isFinite(state.budget.count)) {
-    params.set("budget_n", String(Math.floor(state.budget.count)));
-  } else {
-    params.set("budget_pct", String(state.budget.pct));
-  }
   params.set("t", String(Date.now()));
   return `./demo.html?${params.toString()}`;
-}
-
-function paintBudget() {
-  if (!budgetChips) return;
-  budgetChips.innerHTML = BUDGET_PRESETS.map((pct) => {
-    const active = state.budget.mode === "pct" && state.budget.pct === pct;
-    const label = `${Math.round(pct * 100)}%`;
-    return `
-      <button
-        type="button"
-        class="budget-chip${active ? " is-active" : ""}"
-        data-pct="${pct}"
-        aria-pressed="${active ? "true" : "false"}"
-      >${label}</button>
-    `;
-  }).join("");
-  budgetChips.querySelectorAll("[data-pct]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.budget.mode = "pct";
-      state.budget.pct = Number(button.dataset.pct);
-      state.budget.count = null;
-      if (budgetCount) budgetCount.value = "";
-      persistBudget();
-      paintSelection();
-      paintBudget();
-    });
-  });
-  if (budgetCount) {
-    budgetCount.value =
-      state.budget.mode === "count" && Number.isFinite(state.budget.count)
-        ? String(state.budget.count)
-        : "";
-  }
 }
 
 function paintSelection() {
   const item = datasetById(state.selected);
   const m = fullM(item);
-  const nSynth = resolvedNSynth(item);
   selectedName.textContent = item.name;
   selectedBlurb.innerHTML = `${item.blurb}<br><span class="landing-howto">${item.howto || ""}</span>`;
   selectedStats.innerHTML = `
@@ -188,7 +118,6 @@ function paintSelection() {
     <div><dt>n⁺ minority</dt><dd>${item.n_minority}</dd></div>
     <div><dt>n⁻ majority</dt><dd>${item.n_majority}</dd></div>
     <div><dt>m = n⁻ − n⁺</dt><dd>${m}</dd></div>
-    <div><dt>Budget n</dt><dd>${nSynth}</dd></div>
     <div><dt>Imbalance</dt><dd>${fmtRatio(item.imbalance_ratio)}</dd></div>
     <div class="landing-stats-wide"><dt>Features</dt><dd>${item.features.join(" · ")}</dd></div>
   `;
@@ -196,8 +125,7 @@ function paintSelection() {
     scenarioSample.innerHTML = `
       Oversample the minority class with <code>k = 5</code>, <code>p = 3</code>,
       and <code>seed = 2207</code>; generate
-      <code>n_synth = ${nSynth}</code> of
-      <code>m = n⁻ − n⁺ = ${item.n_majority} − ${item.n_minority} = ${m}</code>.
+      <code>m = n⁻ − n⁺ = ${item.n_majority} − ${item.n_minority} = ${m}</code> points.
     `;
   }
   const glossary = document.querySelector("#scenario-glossary");
@@ -205,16 +133,8 @@ function paintSelection() {
     glossary.innerHTML = `
       <code>n⁺</code> = minority = <strong>${item.n_minority}</strong> ·
       <code>n⁻</code> = majority = <strong>${item.n_majority}</strong> ·
-      <code>m = n⁻ − n⁺</code> = <strong>${m}</strong> ·
-      budget generates <strong>${nSynth}</strong> synthetic points.
+      <code>m = n⁻ − n⁺</code> = <strong>${m}</strong> to balance the two classes.
     `;
-  }
-  if (budgetReadout) {
-    const modeLabel =
-      state.budget.mode === "count"
-        ? `custom count ${nSynth}`
-        : `${Math.round((state.budget.pct || 1) * 100)}% of m`;
-    budgetReadout.textContent = `m = ${m} → generate n_synth = ${nSynth} (${modeLabel})`;
   }
   startDemo.href = demoHref();
 }
@@ -330,31 +250,7 @@ async function loadPreview(id) {
   }
 }
 
-function bindBudgetInput() {
-  if (!budgetCount) return;
-  budgetCount.addEventListener("input", () => {
-    const raw = budgetCount.value.trim();
-    if (raw === "") {
-      state.budget.mode = "pct";
-      state.budget.count = null;
-      persistBudget();
-      paintSelection();
-      paintBudget();
-      return;
-    }
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0) return;
-    state.budget.mode = "count";
-    state.budget.count = Math.floor(value);
-    persistBudget();
-    paintSelection();
-    paintBudget();
-  });
-}
-
 async function boot() {
-  bindBudgetInput();
-  paintBudget();
   renderCards();
   paintSelection();
   try {

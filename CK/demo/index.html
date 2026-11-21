@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-store">
     <meta name="description" content="Simplicial SMOTE demo landing page: choose a dataset and compare oversampling methods">
     <title>Simplicial SMOTE — demo intro</title>
-    <link rel="stylesheet" href="./styles.css?v=20261121-ui">
+    <link rel="stylesheet" href="./styles.css?v=20261121-nobudget">
   </head>
   <body class="landing-body">
     <header class="page-header landing-header">
@@ -15,7 +15,7 @@
         <h1>Simplicial SMOTE</h1>
         <p class="lede">
           SMOTE generates points along k-NN edges; Simplicial SMOTE generates points inside a simplex
-          using barycentric coordinates. Choose a dataset and oversample budget, then start the demo.
+          using barycentric coordinates. Choose a dataset below, then start the demo.
         </p>
       </div>
       <a
@@ -40,24 +40,25 @@
           <li>
             <strong>Generate samples</strong>
             <span id="scenario-sample">
-              Oversample with <code>k = 5</code>, <code>p = 3</code>, <code>seed = 2207</code>
-              using the budget below (fraction of <code>m = n⁻ − n⁺</code> or a custom count).
+              Oversample with <code>k = 5</code>, <code>p = 3</code>, <code>seed = 2207</code>;
+              generate <code>m = n⁻ − n⁺</code> synthetic points.
             </span>
           </li>
           <li>
             <strong>Train</strong>
             <span>
-              Fit <code>LogisticRegression(C=1.2)</code> on the augmented training set.
+              Standardize from training data only, then fit
+              <code>KNeighborsClassifier(n_neighbors=5)</code>.
             </span>
           </li>
           <li>
             <strong>Results</strong>
-            <span>Evaluate on the test set: recall, precision, F1, FN, FP, plus the decision boundary.</span>
+            <span>Single fixed holdout: recall, precision, F1, MCC, FN, FP, plus the decision boundary.</span>
           </li>
           <li>
             <strong>Compare</strong>
             <span>
-              Original, Random, Global (Mixup), SMOTE, and Simplicial SMOTE.
+              Original, Random Oversampling, Global Mixup, Gaussian, SMOTE, and Simplicial SMOTE.
             </span>
           </li>
         </ol>
@@ -84,30 +85,6 @@
           <h2 id="selected-name">—</h2>
           <p id="selected-blurb" class="muted">Loading…</p>
           <dl class="landing-stats" id="selected-stats"></dl>
-
-          <div class="landing-budget-block">
-            <div class="landing-budget-controls">
-              <div
-                id="budget-chips"
-                class="budget-chips"
-                role="group"
-                aria-label="Budget percent of m"
-              ></div>
-              <label class="budget-custom">
-                <span>Custom count</span>
-                <input
-                  id="budget-count"
-                  type="number"
-                  min="0"
-                  step="1"
-                  inputmode="numeric"
-                  placeholder="e.g. 40"
-                  aria-describedby="budget-readout"
-                >
-              </label>
-            </div>
-            <p id="budget-readout" class="budget-readout" role="status"></p>
-          </div>
         </div>
 
         <div class="landing-setup-aside">
@@ -119,6 +96,6 @@
       </section>
     </main>
 
-    <script type="module" src="./landing.js?v=20261121-ui"></script>
+    <script type="module" src="./landing.js?v=20261121-nobudget"></script>
   </body>
 </html>

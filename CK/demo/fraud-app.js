@@ -1,54 +1,23 @@
 const API = "http://127.0.0.1:8000";
 const STORAGE_KEY = "ssmote-demo-dataset";
-const BUDGET_KEY = "ssmote-demo-budget";
 const DATASET_IDS = new Set(["fraud", "moons", "swiss_roll", "gaussian_circle", "circles"]);
 const params = new URLSearchParams(window.location.search);
 const requestedDataset = params.get("dataset") || localStorage.getItem(STORAGE_KEY) || "fraud";
 const DATASET = DATASET_IDS.has(requestedDataset) ? requestedDataset : "fraud";
 localStorage.setItem(STORAGE_KEY, DATASET);
-
-function loadBudgetConfig() {
-  const urlN = params.get("budget_n");
-  const urlPct = params.get("budget_pct");
-  if (urlN !== null && urlN !== "" && Number.isFinite(Number(urlN))) {
-    const count = Math.max(0, Math.floor(Number(urlN)));
-    localStorage.setItem(BUDGET_KEY, JSON.stringify({ mode: "count", pct: 1, count }));
-    return { mode: "count", pct: 1, count, n_synthetic: count, budget_pct: null };
-  }
-  if (urlPct !== null && urlPct !== "" && Number.isFinite(Number(urlPct))) {
-    const pct = Math.min(1, Math.max(0.0001, Number(urlPct)));
-    localStorage.setItem(BUDGET_KEY, JSON.stringify({ mode: "pct", pct, count: null }));
-    return { mode: "pct", pct, count: null, n_synthetic: null, budget_pct: pct };
-  }
-  try {
-    const raw = JSON.parse(localStorage.getItem(BUDGET_KEY) || "null");
-    if (raw?.mode === "count" && Number.isFinite(Number(raw.count))) {
-      return {
-        mode: "count",
-        pct: 1,
-        count: Math.max(0, Math.floor(Number(raw.count))),
-        n_synthetic: Math.max(0, Math.floor(Number(raw.count))),
-        budget_pct: null,
-      };
-    }
-    if (raw?.mode === "pct" && Number.isFinite(Number(raw.pct))) {
-      const pct = Math.min(1, Math.max(0.0001, Number(raw.pct)));
-      return { mode: "pct", pct, count: null, n_synthetic: null, budget_pct: pct };
-    }
-  } catch {
-    /* ignore */
-  }
-  return { mode: "pct", pct: 1, count: null, n_synthetic: null, budget_pct: 1 };
+try {
+  localStorage.removeItem("ssmote-demo-budget");
+} catch {
+  /* ignore */
 }
-
-const BUDGET = loadBudgetConfig();
 
 const METHODS = [
   { id: "original", label: "Original", note: "No oversampling" },
-  { id: "random", label: "Random", note: "Duplicate minority points" },
-  { id: "global", label: "Global", note: "Convex mix of random pairs" },
+  { id: "random", label: "Random Oversampling", note: "Duplicate minority points" },
+  { id: "global", label: "Global Mixup", note: "Global convex-pair sampling" },
+  { id: "gaussian", label: "Gaussian", note: "Fit minority distribution" },
   { id: "smote", label: "SMOTE", note: "Interpolate along edges" },
-  { id: "simplicial", label: "Simplicial", note: "Generate inside simplices" },
+  { id: "simplicial", label: "Simplicial SMOTE", note: "Generate inside simplices" },
 ];
 const COLORS = {
   bg: "#eef1f5",
@@ -583,10 +552,10 @@ function drawSideMenu(ui, result) {
 
   // Legend compact
   const items = [
-    [COLORS.normal, "N"],
-    [COLORS.fraud, "F"],
-    [COLORS.test, "T"],
-    [COLORS.synthetic, "S"],
+    [COLORS.normal, "Majority"],
+    [COLORS.fraud, "Minority"],
+    [COLORS.test, "Test"],
+    [COLORS.synthetic, "Synthetic"],
   ];
   items.forEach(([color, label], i) => {
     const lx = x + inner + i * (contentW / 4);
@@ -714,7 +683,11 @@ function drawSideMenu(ui, result) {
     ctx.fillText(`Sample ${state.itemIndex + 1}/${result.timeline.length}`, x + inner, cy);
     ctx.fillStyle = COLORS.sideMuted;
     ctx.textAlign = "right";
-    ctx.fillText(`dim ${item?.dimension ?? 0}`, x + inner + contentW, cy);
+    ctx.fillText(
+      `p=${item?.parents?.length ?? "—"} vertices · dim ${item?.dimension ?? "—"}`,
+      x + inner + contentW,
+      cy,
+    );
     ctx.textAlign = "left";
     cy += 18;
 
@@ -798,17 +771,18 @@ function drawSideMenu(ui, result) {
   }
 
   const metrics = result.metrics;
-  const fraudCount = result.test.filter((p) => p.label === 1).length;
-  const caught = fraudCount - metrics.false_negatives;
+  const minorityCount = result.test.filter((p) => p.label === 1).length;
+  const caught = minorityCount - metrics.false_negatives;
   ctx.fillStyle = COLORS.accent;
   ctx.font = "800 30px system-ui";
   ctx.fillText(String(caught), x + inner, metricsTop + 24);
   ctx.fillStyle = COLORS.sideMuted;
   ctx.font = "13px system-ui";
-  ctx.fillText(`/ ${fraudCount} fraud test`, x + inner + 52, metricsTop + 36);
+  ctx.fillText(`/ ${minorityCount} minority test`, x + inner + 52, metricsTop + 36);
 
   const rows = [
     ["Recall", `${(metrics.recall * 100).toFixed(0)}%`],
+    ["MCC", metrics.mcc.toFixed(2)],
     ["F1", metrics.f1.toFixed(2)],
     ["FN", String(metrics.false_negatives)],
     ["FP", String(metrics.false_positives)],
@@ -1073,29 +1047,8 @@ function drawPlot(ui, result) {
         }
       });
 
-      // After parent mesh is mostly drawn, grow spokes to target point
-      const meshDone = phase > 1 ? 1 : easeOut(clamp(progress * pairCount - (pairCount - 0.35), 0, 1));
-      if (meshDone > 0) {
-        const targetScreen = toScreen(item.point, result, view);
-        screens.forEach((a) => {
-          ctx.save();
-          ctx.strokeStyle = COLORS.synthetic;
-          ctx.globalAlpha = 0.12 + 0.2 * meshDone;
-          ctx.lineWidth = 5;
-          ctx.beginPath();
-          ctx.moveTo(a[0], a[1]);
-          ctx.lineTo(
-            a[0] + (targetScreen[0] - a[0]) * meshDone,
-            a[1] + (targetScreen[1] - a[1]) * meshDone,
-          );
-          ctx.stroke();
-          ctx.restore();
-          drawConnectionEdge(a, targetScreen, meshDone, COLORS.synthetic, 1.8);
-        });
-        if (meshDone > 0.6) {
-          drawGlow(targetScreen[0], targetScreen[1], 16 + 8 * pulse, COLORS.synthetic, 0.35);
-        }
-      }
+      // Spokes to the new point only from interpolate onward (step 4+) —
+      // earlier green preview sat on/near a parent and looked like a vertex went green.
     }
 
     // Phase 2+: simplex fill fades in
@@ -1134,52 +1087,53 @@ function drawPlot(ui, result) {
       });
     }
 
-    // Phase 3: interpolate with trail
+    // Phase 3 (step 4): form P = Σ λᵢ Pᵢ in place — do not start on parents[0]
+    // (that made one simplex vertex look green).
     const target = parents.length
       ? {
           x: parents.reduce((s, p, i) => s + p.x * (item.weights[i] || 0), 0),
           y: parents.reduce((s, p, i) => s + p.y * (item.weights[i] || 0), 0),
         }
       : pointObject(item.point);
-    const t = phase === 3 ? easeInOut(clamp(progress, 0, 1)) : phase >= 4 ? 1 : 0;
-    if (t > 0 && parents.length) {
-      const moving = {
-        x: parents[0].x * (1 - t) + target.x * t,
-        y: parents[0].y * (1 - t) + target.y * t,
-      };
-      // trail crumbs
-      for (let i = 1; i <= 8; i += 1) {
-        const tt = Math.max(0, t - i * 0.04);
-        const trail = {
-          x: parents[0].x * (1 - tt) + target.x * tt,
-          y: parents[0].y * (1 - tt) + target.y * tt,
-        };
-        const [tx, ty] = toScreen(trail, result, view);
+    if (phase >= 3 && parents.length) {
+      const t = phase === 3 ? easeInOut(clamp(progress, 0, 1)) : 1;
+      const targetScreen = toScreen(target, result, view);
+      const screens = parents.map((parent) => toScreen(parent, result, view));
+      screens.forEach((a) => {
+        const edgeT = phase === 3 ? t : 1;
+        ctx.save();
+        ctx.strokeStyle = COLORS.synthetic;
+        ctx.globalAlpha = 0.12 + 0.2 * edgeT;
+        ctx.lineWidth = 5;
         ctx.beginPath();
-        ctx.fillStyle = COLORS.synthetic;
-        ctx.globalAlpha = 0.08 * (9 - i);
-        ctx.arc(tx, ty, 5 - i * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      const [sx, sy] = toScreen(moving, result, view);
-      drawGlow(sx, sy, 26 + 8 * pulse, COLORS.synthetic, 0.45);
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(a[0] + (targetScreen[0] - a[0]) * edgeT, a[1] + (targetScreen[1] - a[1]) * edgeT);
+        ctx.stroke();
+        ctx.restore();
+        drawConnectionEdge(a, targetScreen, edgeT, COLORS.synthetic, 1.8);
+      });
+      const [sx, sy] = targetScreen;
+      const appear = phase === 3 ? t : 1;
+      drawGlow(sx, sy, 26 + 8 * pulse, COLORS.synthetic, 0.45 * appear);
       ctx.beginPath();
       ctx.strokeStyle = COLORS.synthetic;
       ctx.lineWidth = 2;
-      ctx.globalAlpha = 0.7;
+      ctx.globalAlpha = 0.7 * appear;
       ctx.arc(sx, sy, 12 + 5 * Math.sin(state.animTime * 0.01), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.fillStyle = COLORS.synthetic;
-      ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+      ctx.globalAlpha = appear;
+      ctx.arc(sx, sy, 4 + 3 * appear, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "#145c3a";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
-    // Phase 4: commit burst
+    // Phase 4: commit burst at the synthetic location
     if (phase >= 4) {
       const [sx, sy] = toScreen(pointObject(item.point), result, view);
       const burst = phase === 4 ? phaseT : 1;
@@ -1307,16 +1261,14 @@ function animate(timestamp) {
 }
 
 function runBody(methodId) {
-  const body = {
+  return {
     method: methodId,
     dataset: state.dataset,
     seed: 2207,
     k: 5,
     p: 3,
+    budget_pct: 1,
   };
-  if (BUDGET.n_synthetic !== null) body.n_synthetic = BUDGET.n_synthetic;
-  else body.budget_pct = BUDGET.budget_pct ?? 1;
-  return body;
 }
 
 async function runAll() {

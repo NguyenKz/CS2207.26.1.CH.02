@@ -12,9 +12,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sklearn.datasets import make_swiss_roll
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import f1_score, matthews_corrcoef, precision_score, recall_score
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neighbors import kneighbors_graph
+from sklearn.preprocessing import StandardScaler
 
 DEMO_DIR = Path(__file__).resolve().parents[1]
 VENDORED_REPO = DEMO_DIR / "vendor" / "simplical-smote"
@@ -85,7 +86,7 @@ app.add_middleware(
 
 
 class RunRequest(BaseModel):
-    method: Literal["original", "random", "global", "smote", "simplicial"] = "original"
+    method: Literal["original", "random", "global", "gaussian", "smote", "simplicial"] = "original"
     dataset: DatasetId = "fraud"
     seed: int = Field(default=2207, ge=1, le=999999)
     k: int = Field(default=5, ge=3, le=11)
@@ -296,24 +297,30 @@ def attach_pool_choice(metadata: list[dict], pool_size: int) -> list[dict]:
     return metadata
 
 
-def train_model(points: np.ndarray, labels: np.ndarray, seed: int) -> LogisticRegression:
-    model = LogisticRegression(C=1.2, class_weight=None, max_iter=2000, random_state=seed)
+def train_model(points: np.ndarray, labels: np.ndarray, seed: int) -> KNeighborsClassifier:
+    del seed
+    model = KNeighborsClassifier(n_neighbors=5)
     model.fit(points, labels)
     return model
 
 
-def boundary_grid(model: LogisticRegression, points: np.ndarray) -> list[dict[str, float]]:
+def boundary_grid(
+    model: KNeighborsClassifier,
+    points: np.ndarray,
+    scaler: StandardScaler,
+) -> list[dict[str, float]]:
     pad = 0.45
     x_min, y_min = points.min(axis=0) - pad
     x_max, y_max = points.max(axis=0) + pad
     xs = np.linspace(float(x_min), float(x_max), 25)
     ys = np.linspace(float(y_min), float(y_max), 25)
     xx, yy = np.meshgrid(xs, ys)
-    grid = np.column_stack((xx.ravel(), yy.ravel()))
-    probabilities = model.predict_proba(grid)[:, 1]
+    scaled_grid = np.column_stack((xx.ravel(), yy.ravel()))
+    probabilities = model.predict_proba(scaled_grid)[:, 1]
+    display_grid = scaler.inverse_transform(scaled_grid)
     return [
         {"x": float(point[0]), "y": float(point[1]), "probability": float(probabilities[index])}
-        for index, point in enumerate(grid)
+        for index, point in enumerate(display_grid)
     ]
 
 
@@ -370,32 +377,43 @@ def animation_timeline(
     return timeline
 
 
-def metrics(model: LogisticRegression, test_x: np.ndarray, test_y: np.ndarray) -> dict[str, float | int]:
+def metrics(model: KNeighborsClassifier, test_x: np.ndarray, test_y: np.ndarray) -> dict[str, float | int]:
     predicted = model.predict(test_x)
     return {
         "recall": float(recall_score(test_y, predicted, zero_division=0)),
         "precision": float(precision_score(test_y, predicted, zero_division=0)),
         "f1": float(f1_score(test_y, predicted, zero_division=0)),
+        "mcc": float(matthews_corrcoef(test_y, predicted)),
         "false_negatives": int(((test_y == 1) & (predicted == 0)).sum()),
         "false_positives": int(((test_y == 0) & (predicted == 1)).sum()),
     }
 
 
+def _flatten_simplex_parents(simplices: dict) -> list[list[int]]:
+    """Keep variable-length parent sets (edges vs triangles) without np.concatenate."""
+    rows: list[list[int]] = []
+    for dim in sorted(simplices.keys()):
+        for row in np.asarray(simplices[dim], dtype=object):
+            rows.append([int(parent) for parent in np.asarray(row).tolist()])
+    return rows
+
+
 def _metadata_from_parents(
     synthetic: np.ndarray,
     minority: np.ndarray,
-    parent_rows: np.ndarray,
+    parent_rows: np.ndarray | list,
     seed: int,
     *,
     use_official_point: bool = False,
 ) -> list[dict]:
     random = np.random.default_rng(seed)
     metadata = []
+    n_rows = len(parent_rows)
     for index, point in enumerate(synthetic):
-        if len(parent_rows) == 0:
+        if n_rows == 0:
             parents: list[int] = []
         else:
-            row = parent_rows[index] if index < len(parent_rows) else parent_rows[index % len(parent_rows)]
+            row = parent_rows[index] if index < n_rows else parent_rows[index % n_rows]
             parents = [int(parent) for parent in np.asarray(row).tolist()]
         if not parents:
             metadata.append({
@@ -453,6 +471,28 @@ def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.nd
             m_full,
         )
 
+    if request.method == "gaussian":
+        covariance = np.atleast_2d(np.cov(minority, rowvar=False))
+        covariance += np.eye(minority.shape[1]) * 1e-6
+        synthetic = random.multivariate_normal(minority.mean(axis=0), covariance, size=n_synth)
+        metadata = [
+            {
+                "point": point.tolist(),
+                "parents": [],
+                "weights": [],
+                "exp_draws": [],
+                "dimension": 0,
+            }
+            for point in synthetic
+        ]
+        return (
+            np.concatenate((train_x, synthetic)),
+            np.concatenate((train_y, np.ones(len(synthetic)))),
+            metadata,
+            n_synth,
+            m_full,
+        )
+
     if request.method == "global":
         sampler = Mixup(k=2, random_state=request.seed)
     elif request.method == "smote":
@@ -473,8 +513,7 @@ def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.nd
         pool_size = len(getattr(sampler, "simplices", parent_rows))
         use_official = False
     elif isinstance(simplices, dict):
-        parent_rows = np.concatenate(list(simplices.values())) if simplices else np.empty((0, request.p), dtype=int)
-        parent_rows = parent_rows[:n_synth]
+        parent_rows = _flatten_simplex_parents(simplices)[:n_synth]
         pool_size = len(clique_pool(minority, request.k))
         use_official = False
     else:
@@ -515,29 +554,66 @@ def list_datasets() -> dict:
 
 @app.post("/api/fraud/run")
 def run(request: RunRequest) -> dict:
-    data = load_dataset(request.dataset, request.seed)
-    summary = dataset_summary(request.dataset, data)
-    sampled_x, sampled_y, synthetic, n_synth, m_full = run_sampler(request, data)
+    raw_data = load_dataset(request.dataset, request.seed)
+    summary = dataset_summary(request.dataset, raw_data)
+    scaler = StandardScaler().fit(raw_data["train_x"])
+    data = {
+        "train_x": scaler.transform(raw_data["train_x"]),
+        "train_y": raw_data["train_y"],
+        "test_x": scaler.transform(raw_data["test_x"]),
+        "test_y": raw_data["test_y"],
+    }
+    sampled_x, sampled_y, metadata, n_synth, m_full = run_sampler(request, data)
     model = train_model(sampled_x, sampled_y, request.seed)
     minority = data["train_x"][data["train_y"] == 1]
     all_points = np.concatenate((data["train_x"], data["test_x"]))
+    display_sampled_x = scaler.inverse_transform(sampled_x)
+    display_test_x = scaler.inverse_transform(data["test_x"])
+    synthetic = sampled_x[len(data["train_x"]):]
+    display_synthetic = scaler.inverse_transform(synthetic) if len(synthetic) else synthetic
+    display_minority = scaler.inverse_transform(minority)
+    timeline = [] if request.method == "gaussian" else animation_timeline(metadata, minority, request.method)
+    for item in timeline:
+        item["parent_points"] = [
+            {
+                "x": float(point["x"] * scaler.scale_[0] + scaler.mean_[0]),
+                "y": float(point["y"] * scaler.scale_[1] + scaler.mean_[1]),
+            }
+            for point in item["parent_points"]
+        ]
+        item["point"] = {
+            "x": float(item["point"]["x"] * scaler.scale_[0] + scaler.mean_[0]),
+            "y": float(item["point"]["y"] * scaler.scale_[1] + scaler.mean_[1]),
+        }
+    display_metadata = []
+    for item in metadata:
+        display_item = {**item}
+        display_item["point"] = (
+            scaler.inverse_transform(np.asarray([item["point"]], dtype=float))[0].tolist()
+        )
+        display_metadata.append(display_item)
     return {
         "method": request.method,
         "dataset": summary,
         "features": summary["features"],
-        "train": serialize_points(sampled_x, sampled_y),
-        "test": serialize_points(data["test_x"], data["test_y"]),
-        "synthetic": synthetic,
-        "minority": serialize_points(minority, np.ones(len(minority))),
-        "timeline": animation_timeline(synthetic, minority, request.method),
+        "train": serialize_points(display_sampled_x, sampled_y),
+        "test": serialize_points(display_test_x, data["test_y"]),
+        "synthetic": display_metadata,
+        "minority": serialize_points(display_minority, np.ones(len(display_minority))),
+        "timeline": timeline,
         "edges": graph_edges(data["train_x"][data["train_y"] == 1], request.k),
-        "boundary": boundary_grid(model, all_points),
+        "boundary": boundary_grid(model, all_points, scaler),
         "metrics": metrics(model, data["test_x"], data["test_y"]),
         "seed": request.seed,
         "test_size": len(data["test_y"]),
         "n_synthetic": n_synth,
         "m_full": m_full,
         "budget_pct": request.budget_pct,
+        "classifier": "KNeighborsClassifier(n_neighbors=5)",
+        "normalization": "StandardScaler fitted on training data only",
+        "evaluation": "single fixed synthetic holdout",
+        "p_vertices": request.p,
+        "simplex_dimension": request.p - 1,
     }
 
 
