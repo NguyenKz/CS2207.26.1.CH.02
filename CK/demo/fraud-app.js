@@ -1,13 +1,52 @@
 const API = "http://127.0.0.1:8000";
 const STORAGE_KEY = "ssmote-demo-dataset";
-const DATASET_IDS = new Set(["fraud", "moons", "ring"]);
+const BUDGET_KEY = "ssmote-demo-budget";
+const DATASET_IDS = new Set(["fraud", "moons", "swiss_roll", "gaussian_circle", "circles"]);
 const params = new URLSearchParams(window.location.search);
 const requestedDataset = params.get("dataset") || localStorage.getItem(STORAGE_KEY) || "fraud";
 const DATASET = DATASET_IDS.has(requestedDataset) ? requestedDataset : "fraud";
 localStorage.setItem(STORAGE_KEY, DATASET);
 
+function loadBudgetConfig() {
+  const urlN = params.get("budget_n");
+  const urlPct = params.get("budget_pct");
+  if (urlN !== null && urlN !== "" && Number.isFinite(Number(urlN))) {
+    const count = Math.max(0, Math.floor(Number(urlN)));
+    localStorage.setItem(BUDGET_KEY, JSON.stringify({ mode: "count", pct: 1, count }));
+    return { mode: "count", pct: 1, count, n_synthetic: count, budget_pct: null };
+  }
+  if (urlPct !== null && urlPct !== "" && Number.isFinite(Number(urlPct))) {
+    const pct = Math.min(1, Math.max(0.0001, Number(urlPct)));
+    localStorage.setItem(BUDGET_KEY, JSON.stringify({ mode: "pct", pct, count: null }));
+    return { mode: "pct", pct, count: null, n_synthetic: null, budget_pct: pct };
+  }
+  try {
+    const raw = JSON.parse(localStorage.getItem(BUDGET_KEY) || "null");
+    if (raw?.mode === "count" && Number.isFinite(Number(raw.count))) {
+      return {
+        mode: "count",
+        pct: 1,
+        count: Math.max(0, Math.floor(Number(raw.count))),
+        n_synthetic: Math.max(0, Math.floor(Number(raw.count))),
+        budget_pct: null,
+      };
+    }
+    if (raw?.mode === "pct" && Number.isFinite(Number(raw.pct))) {
+      const pct = Math.min(1, Math.max(0.0001, Number(raw.pct)));
+      return { mode: "pct", pct, count: null, n_synthetic: null, budget_pct: pct };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { mode: "pct", pct: 1, count: null, n_synthetic: null, budget_pct: 1 };
+}
+
+const BUDGET = loadBudgetConfig();
+
 const METHODS = [
   { id: "original", label: "Original", note: "No oversampling" },
+  { id: "random", label: "Random", note: "Duplicate minority points" },
+  { id: "global", label: "Global", note: "Convex mix of random pairs" },
   { id: "smote", label: "SMOTE", note: "Interpolate along edges" },
   { id: "simplicial", label: "Simplicial", note: "Generate inside simplices" },
 ];
@@ -38,14 +77,37 @@ const COLORS = {
   calloutBg: "#ffffffee",
 };
 const PHASES = ["select-parent", "connect-neighborhood", "show-weights", "interpolate", "commit-sample"];
-const PHASE_NAMES = [
-  "Select a cluster from the pool",
-  "Connect the neighborhood (visual only)",
-  "Draw e with RNG → normalize λ",
-  "Interpolate the new point",
-  "Commit synthetic sample",
-];
-const DURATIONS = [2200, 2000, 2800, 2600, 2300];
+const PHASE_LABELS = {
+  "select-parent": "Select a cluster from the pool",
+  "connect-neighborhood": "Connect the neighborhood (visual only)",
+  "show-weights": "Draw e with RNG → normalize λ",
+  interpolate: "Interpolate the new point",
+  "commit-sample": "Commit synthetic sample",
+};
+const PHASE_DURATIONS = {
+  "select-parent": 2200,
+  "connect-neighborhood": 2000,
+  "show-weights": 2800,
+  interpolate: 2600,
+  "commit-sample": 2300,
+};
+const PHASE_NAMES = PHASES.map((id) => PHASE_LABELS[id]);
+const DURATIONS = PHASES.map((id) => PHASE_DURATIONS[id]);
+
+function phasesFor(methodId, result) {
+  const item = result?.timeline?.[0];
+  if (item?.phases?.length) return item.phases;
+  if (methodId === "random") return ["select-parent", "commit-sample"];
+  return PHASES;
+}
+
+function activePhaseList(result = state.results.get(state.active)) {
+  return phasesFor(state.active, result);
+}
+
+function activePhaseName(result = state.results.get(state.active)) {
+  return activePhaseList(result)[state.phaseIndex] || PHASES[state.phaseIndex];
+}
 
 function fmtPoint(point) {
   const p = pointObject(point);
@@ -117,8 +179,9 @@ function stepCalcLines(item, stepIndex) {
   const weights = item.weights || [];
   const parentPoints = (item.parent_points || []).map(pointObject);
   const labels = parents.map((parent) => `P${parent + 1}`);
+  const phaseName = (item.phases || PHASES)[stepIndex] || PHASES[stepIndex];
 
-  if (stepIndex === 0) {
+  if (phaseName === "select-parent") {
     if (!parents.length) return ["No cluster"];
     const size = Number(item.pool_size) || 0;
     const lines = [
@@ -133,7 +196,7 @@ function stepCalcLines(item, stepIndex) {
     return lines.filter(Boolean);
   }
 
-  if (stepIndex === 1) {
+  if (phaseName === "connect-neighborhood") {
     if (parents.length < 2) {
       return ["Visual only (no new point)", `Neighborhood: ${labels.join(", ") || "—"}`];
     }
@@ -150,12 +213,12 @@ function stepCalcLines(item, stepIndex) {
     return edges.length > 1 ? edges : ["Visual only (no new point)", `Connect ${labels.join(" – ")}`];
   }
 
-  if (stepIndex === 2) {
+  if (phaseName === "show-weights") {
     if (!weights.length) return ["λ not available"];
     return lambdaCalcLines(item);
   }
 
-  if (stepIndex === 3) {
+  if (phaseName === "interpolate") {
     if (!weights.length || !parentPoints.length) return ["Waiting for barycentric weights"];
     const terms = labels.map((label, index) => `${Number(weights[index]).toFixed(2)}·${label}`);
     const result = {
@@ -165,7 +228,6 @@ function stepCalcLines(item, stepIndex) {
     return [`P = ${terms.join(" + ")}`, `P = ${fmtPoint(result)}`];
   }
 
-  // commit
   return [
     `Commit ${fmtPoint(item.point)}`,
     `parents [${labels.join(", ")}]`,
@@ -200,7 +262,6 @@ const state = {
   dataset: DATASET,
   animTime: 0,
   commitBurst: 0,
-  debugLastRenderKey: "",
 };
 
 document.head.insertAdjacentHTML("beforeend", `<link rel="stylesheet" href="./fraud.css">`);
@@ -657,7 +718,9 @@ function drawSideMenu(ui, result) {
     ctx.textAlign = "left";
     cy += 18;
 
-    PHASE_NAMES.forEach((name, index) => {
+    const phaseIds = item?.phases || activePhaseList(result);
+    phaseIds.forEach((phaseId, index) => {
+      const name = PHASE_LABELS[phaseId] || phaseId;
       const done = index < state.phaseIndex;
       const current = index === state.phaseIndex;
       // Compact non-current steps to avoid side-panel overflow.
@@ -817,8 +880,16 @@ function drawPlot(ui, result) {
 
   const minority = result.minority || result.train.filter((p) => p.label === 1);
   const item = activeItem(result);
-  const phase = state.phaseIndex;
-  const progress = state.phaseElapsed / (DURATIONS[phase] || 1);
+  const phaseName = activePhaseName(result);
+  // Map named phases onto the original 0..4 ranks so Random's short timeline still works.
+  const phase = ({
+    "select-parent": 0,
+    "connect-neighborhood": 1,
+    "show-weights": 2,
+    interpolate: 3,
+    "commit-sample": 4,
+  })[phaseName] ?? state.phaseIndex;
+  const progress = state.phaseElapsed / (PHASE_DURATIONS[phaseName] || DURATIONS[state.phaseIndex] || 1);
   const activeParents = new Set(item?.parents || []);
 
   // Base k-NN edges: visible, but quieter than the selected cluster edges.
@@ -867,16 +938,18 @@ function drawPlot(ui, result) {
     });
   ctx.globalAlpha = 1;
 
+  const baseR = item ? 3.2 : 3.6;
   minority.forEach((p, index) => {
     const [sx, sy] = toScreen(p, result, view);
     const active = activeParents.has(index);
     ctx.beginPath();
     ctx.fillStyle = COLORS.fraud;
     ctx.globalAlpha = 1;
-    ctx.arc(sx, sy, active ? 7 : 5.2, 0, Math.PI * 2);
+    // Same radius as majority so count imbalance stays visible; active only via stroke.
+    ctx.arc(sx, sy, baseR, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = active ? "#ffffff" : "#7f1d1d";
-    ctx.lineWidth = active ? 2 : 1.2;
+    ctx.lineWidth = active ? 2 : 1;
     ctx.stroke();
   });
   ctx.globalAlpha = 1;
@@ -1127,7 +1200,7 @@ function drawPlot(ui, result) {
     const [sx, sy] = toScreen({ x: sample.point[0], y: sample.point[1] }, result, view);
     const active = index === state.itemIndex;
     const selected = state.selectedSynthetic === index;
-    const justBorn = active && state.phaseIndex === 4;
+    const justBorn = active && activePhaseName(result) === "commit-sample";
     const birth = justBorn ? easeOut(clamp(progress, 0, 1)) : 1;
     const radius = (active || selected ? 7.5 : 5.4) * (0.4 + 0.6 * birth);
     if (active) drawGlow(sx, sy, 26, COLORS.synthetic, 0.3);
@@ -1157,13 +1230,6 @@ function drawPlot(ui, result) {
 function draw() {
   const result = state.results.get(state.active);
   const ui = layout();
-  const renderKey = `${state.active}:${state.itemIndex}:${state.phaseIndex}:${state.visibleSynthetic}`;
-  if (renderKey !== state.debugLastRenderKey) {
-    state.debugLastRenderKey = renderKey;
-    // #region agent log
-    fetch('http://127.0.0.1:7774/ingest/ed864637-66de-47c5-97ca-87c515c63574',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'efd190'},body:JSON.stringify({sessionId:'efd190',runId:'initial',hypothesisId:'D',location:'fraud-app.js:1170',message:'Canvas render state changed',data:{active:state.active,itemIndex:state.itemIndex,phaseIndex:state.phaseIndex,visibleSynthetic:state.visibleSynthetic,timelineLength:result?.timeline?.length||0},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }
   state.hitRegions = [];
   ctx.clearRect(0, 0, state.viewport.width, state.viewport.height);
   ctx.fillStyle = COLORS.bg;
@@ -1175,12 +1241,13 @@ function draw() {
 function setTimelinePosition(position, play = false) {
   const result = state.results.get(state.active);
   if (!result?.timeline?.length) return;
-  const total = result.timeline.length * PHASES.length;
+  const nPhases = activePhaseList(result).length;
+  const total = result.timeline.length * nPhases;
   const cursor = clamp(Math.round(position), 0, total - 1);
-  state.itemIndex = Math.floor(cursor / PHASES.length);
-  state.phaseIndex = cursor % PHASES.length;
+  state.itemIndex = Math.floor(cursor / nPhases);
+  state.phaseIndex = cursor % nPhases;
   state.phaseElapsed = 0;
-  state.visibleSynthetic = state.itemIndex + (state.phaseIndex === PHASES.length - 1 ? 1 : 0);
+  state.visibleSynthetic = state.itemIndex + (state.phaseIndex === nPhases - 1 ? 1 : 0);
   state.playing = play;
   syncFocusTarget(result);
 }
@@ -1201,7 +1268,8 @@ function resetTimeline(result, shouldPlay = false) {
 }
 
 function advanceTimeline(result) {
-  if (state.phaseIndex === PHASES.length - 1) {
+  const nPhases = activePhaseList(result).length;
+  if (state.phaseIndex === nPhases - 1) {
     state.visibleSynthetic = Math.max(state.visibleSynthetic, state.itemIndex + 1);
     state.itemIndex += 1;
     state.phaseIndex = 0;
@@ -1210,7 +1278,7 @@ function advanceTimeline(result) {
   }
   if (state.itemIndex >= result.timeline.length) {
     state.itemIndex = Math.max(0, result.timeline.length - 1);
-    state.phaseIndex = PHASES.length - 1;
+    state.phaseIndex = nPhases - 1;
     state.playing = false;
     state.visibleSynthetic = result.timeline.length;
     state.status = "Completed";
@@ -1224,7 +1292,8 @@ function animate(timestamp) {
   state.animTime += delta;
   if (result?.timeline?.length && state.playing) {
     state.phaseElapsed += delta * state.speed;
-    const duration = reducedMotion ? 1 : DURATIONS[state.phaseIndex];
+    const phaseName = activePhaseName(result);
+    const duration = reducedMotion ? 1 : (PHASE_DURATIONS[phaseName] || DURATIONS[state.phaseIndex] || 1);
     if (state.phaseElapsed >= duration) {
       state.phaseElapsed = 0;
       advanceTimeline(result);
@@ -1237,6 +1306,19 @@ function animate(timestamp) {
   state.raf = requestAnimationFrame(animate);
 }
 
+function runBody(methodId) {
+  const body = {
+    method: methodId,
+    dataset: state.dataset,
+    seed: 2207,
+    k: 5,
+    p: 3,
+  };
+  if (BUDGET.n_synthetic !== null) body.n_synthetic = BUDGET.n_synthetic;
+  else body.budget_pct = BUDGET.budget_pct ?? 1;
+  return body;
+}
+
 async function runAll() {
   if (state.running) return;
   state.running = true;
@@ -1246,21 +1328,11 @@ async function runAll() {
       const response = await fetch(`${API}/api/fraud/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          method: method.id,
-          dataset: state.dataset,
-          seed: 2207,
-          k: 5,
-          p: 3,
-          budget: 1,
-        }),
+        body: JSON.stringify(runBody(method.id)),
       });
       if (!response.ok) throw new Error(`Backend ${response.status}`);
       const data = await response.json();
       state.results.set(method.id, data);
-      // #region agent log
-      fetch('http://127.0.0.1:7774/ingest/ed864637-66de-47c5-97ca-87c515c63574',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'efd190'},body:JSON.stringify({sessionId:'efd190',runId:'initial',hypothesisId:'E',location:'fraud-app.js:1280',message:'Frontend received method result',data:{method:method.id,timelineLength:data.timeline?.length||0,firstParents:(data.timeline||[]).slice(0,12).map((item)=>item.parents),firstPoints:(data.timeline||[]).slice(0,12).map((item)=>item.point)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       state.active = method.id;
       resetTimeline(data, false);
       state.status = `${method.label} loaded`;
@@ -1313,8 +1385,14 @@ function handleAction(id) {
     return;
   }
   if (id === "restart") return resetTimeline(result, false);
-  if (id === "back") return setTimelinePosition(state.itemIndex * PHASES.length + state.phaseIndex - 1);
-  if (id === "forward") return setTimelinePosition(state.itemIndex * PHASES.length + state.phaseIndex + 1);
+  if (id === "back") {
+    const nPhases = activePhaseList(result).length;
+    return setTimelinePosition(state.itemIndex * nPhases + state.phaseIndex - 1);
+  }
+  if (id === "forward") {
+    const nPhases = activePhaseList(result).length;
+    return setTimelinePosition(state.itemIndex * nPhases + state.phaseIndex + 1);
+  }
   if (id === "speed-down" || id === "speed-up") {
     const speeds = [0.001, 0.01, 1];
     let index = speeds.indexOf(state.speed);
@@ -1330,7 +1408,8 @@ function handleAction(id) {
   if (id.startsWith("step-")) {
     const step = Number(id.replace("step-", ""));
     if (!Number.isFinite(step) || !result.timeline?.length) return;
-    setTimelinePosition(state.itemIndex * PHASES.length + step, false);
+    const nPhases = activePhaseList(result).length;
+    setTimelinePosition(state.itemIndex * nPhases + step, false);
   }
 }
 

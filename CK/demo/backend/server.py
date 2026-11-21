@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import sys
-import time
 from pathlib import Path
 from typing import Literal
 
@@ -13,18 +11,24 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sklearn.datasets import make_swiss_roll
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score
 from sklearn.neighbors import kneighbors_graph
 
 DEMO_DIR = Path(__file__).resolve().parents[1]
 VENDORED_REPO = DEMO_DIR / "vendor" / "simplical-smote"
-DEBUG_LOG = DEMO_DIR.parents[1] / ".cursor" / "debug-efd190.log"
 sys.path.insert(0, str(VENDORED_REPO))
 
-from ssmote import SMOTE, SimplicialSMOTE  # noqa: E402
+from ssmote import Mixup, SMOTE, SimplicialSMOTE  # noqa: E402
 
-DatasetId = Literal["fraud", "moons", "ring"]
+DatasetId = Literal["fraud", "moons", "swiss_roll", "gaussian_circle", "circles"]
+
+# Paper §4.1 synthetic layout: n⁺=50, n⁻=300 (IR=6).
+PAPER_N_PLUS = 50
+PAPER_N_MINUS = 300
+PAPER_TEST_PLUS = 30
+PAPER_TEST_MINUS = 120
 
 DATASET_META: dict[str, dict[str, str]] = {
     "fraud": {
@@ -33,20 +37,39 @@ DATASET_META: dict[str, dict[str, str]] = {
         "howto": "Synthetic 2D: Normal around the origin (majority) plus two Normal clusters (minority). Not real transaction data.",
         "feature_x": "transaction amount",
         "feature_y": "merchant risk",
+        "group": "teaching",
     },
     "moons": {
         "name": "Two moons",
-        "blurb": "Two moon-shaped arcs; the minority class occupies one arc.",
-        "howto": "Synthetic 2D: two arcs (angle ~Uniform[0,π], radius with Normal noise) — one majority arc and one minority arc.",
+        "blurb": "Paper §4.1: two moon arcs with n⁺=50, n⁻=300.",
+        "howto": "Paper synthetic: minority on one moon arc, majority on the other (50 / 300 train).",
         "feature_x": "x",
         "feature_y": "y",
+        "group": "paper",
     },
-    "ring": {
-        "name": "Concentric ring",
-        "blurb": "The majority class is in the center; the minority class is on the outer ring.",
-        "howto": "Synthetic 2D: inner disk (r ∝ √U) = majority; outer ring (angle Uniform[0,2π] plus thickness noise) = minority.",
+    "swiss_roll": {
+        "name": "Swiss roll",
+        "blurb": "Paper §4.1: minority on a Swiss-roll manifold projected to 2D.",
+        "howto": "Paper synthetic: minority = Swiss roll (x,z); majority fills the bounding box (50 / 300 train).",
+        "feature_x": "x",
+        "feature_y": "z",
+        "group": "paper",
+    },
+    "gaussian_circle": {
+        "name": "Gaussian in circle",
+        "blurb": "Paper §4.1: Gaussian minority blob inside a circular majority ring.",
+        "howto": "Paper synthetic: majority on an outer ring; minority ~ Normal at the origin (50 / 300 train).",
         "feature_x": "x",
         "feature_y": "y",
+        "group": "paper",
+    },
+    "circles": {
+        "name": "Circle in circle",
+        "blurb": "Paper §4.1: concentric circles — minority on the outer ring.",
+        "howto": "Paper synthetic: inner disk = majority; outer ring = minority (50 / 300 train).",
+        "feature_x": "x",
+        "feature_y": "y",
+        "group": "paper",
     },
 }
 
@@ -62,12 +85,27 @@ app.add_middleware(
 
 
 class RunRequest(BaseModel):
-    method: Literal["original", "smote", "simplicial"] = "original"
+    method: Literal["original", "random", "global", "smote", "simplicial"] = "original"
     dataset: DatasetId = "fraud"
     seed: int = Field(default=2207, ge=1, le=999999)
     k: int = Field(default=5, ge=3, le=11)
     p: int = Field(default=3, ge=3, le=7)
-    budget: int = Field(default=1, ge=1, le=8)
+    budget_pct: float | None = Field(default=1.0, gt=0.0, le=1.0)
+    n_synthetic: int | None = Field(default=None, ge=0, le=100000)
+
+
+def _pack(
+    majority_train: np.ndarray,
+    minority_train: np.ndarray,
+    majority_test: np.ndarray,
+    minority_test: np.ndarray,
+) -> dict[str, np.ndarray]:
+    return {
+        "train_x": np.concatenate((majority_train, minority_train)),
+        "train_y": np.concatenate((np.zeros(len(majority_train)), np.ones(len(minority_train)))),
+        "test_x": np.concatenate((majority_test, minority_test)),
+        "test_y": np.concatenate((np.zeros(len(majority_test)), np.ones(len(minority_test)))),
+    }
 
 
 def make_fraud_data(seed: int = 2207) -> dict[str, np.ndarray]:
@@ -102,12 +140,7 @@ def make_fraud_data(seed: int = 2207) -> dict[str, np.ndarray]:
             random.normal(1.45, 0.22, 10),
         )),
     ))
-    return {
-        "train_x": np.concatenate((normal_train, fraud_train)),
-        "train_y": np.concatenate((np.zeros(len(normal_train)), np.ones(len(fraud_train)))),
-        "test_x": np.concatenate((normal_test, fraud_test)),
-        "test_y": np.concatenate((np.zeros(len(normal_test)), np.ones(len(fraud_test)))),
-    }
+    return _pack(normal_train, fraud_train, normal_test, fraud_test)
 
 
 def _moon_arc(random: np.random.Generator, n: int, shift: float, flip: bool) -> np.ndarray:
@@ -124,17 +157,27 @@ def _moon_arc(random: np.random.Generator, n: int, shift: float, flip: bool) -> 
 
 def make_moons_data(seed: int = 2207) -> dict[str, np.ndarray]:
     random = np.random.default_rng(seed)
-    # Distinct counts from fraud/ring so landing n⁺/n⁻/m visibly change.
-    majority_train = _moon_arc(random, 150, shift=0.0, flip=False)
-    minority_train = _moon_arc(random, 50, shift=0.0, flip=True)
-    majority_test = _moon_arc(random, 90, shift=0.0, flip=False)
-    minority_test = _moon_arc(random, 40, shift=0.0, flip=True)
-    return {
-        "train_x": np.concatenate((majority_train, minority_train)),
-        "train_y": np.concatenate((np.zeros(len(majority_train)), np.ones(len(minority_train)))),
-        "test_x": np.concatenate((majority_test, minority_test)),
-        "test_y": np.concatenate((np.zeros(len(majority_test)), np.ones(len(minority_test)))),
-    }
+    majority_train = _moon_arc(random, PAPER_N_MINUS, shift=0.0, flip=False)
+    minority_train = _moon_arc(random, PAPER_N_PLUS, shift=0.0, flip=True)
+    majority_test = _moon_arc(random, PAPER_TEST_MINUS, shift=0.0, flip=False)
+    minority_test = _moon_arc(random, PAPER_TEST_PLUS, shift=0.0, flip=True)
+    return _pack(majority_train, minority_train, majority_test, minority_test)
+
+
+def _swiss_2d(n: int, noise: float, seed: int) -> np.ndarray:
+    points, _ = make_swiss_roll(n_samples=n, noise=noise, random_state=seed)
+    return points[:, [0, 2]]
+
+
+def make_swiss_roll_data(seed: int = 2207) -> dict[str, np.ndarray]:
+    random = np.random.default_rng(seed)
+    minority_train = _swiss_2d(PAPER_N_PLUS, noise=0.35, seed=seed)
+    minority_test = _swiss_2d(PAPER_TEST_PLUS, noise=0.35, seed=seed + 1)
+    lo = minority_train.min(axis=0) - 1.5
+    hi = minority_train.max(axis=0) + 1.5
+    majority_train = random.uniform(lo, hi, size=(PAPER_N_MINUS, 2))
+    majority_test = random.uniform(lo, hi, size=(PAPER_TEST_MINUS, 2))
+    return _pack(majority_train, minority_train, majority_test, minority_test)
 
 
 def _disk(random: np.random.Generator, n: int, radius: float, thickness: float = 0.0) -> np.ndarray:
@@ -146,19 +189,28 @@ def _disk(random: np.random.Generator, n: int, radius: float, thickness: float =
     return np.column_stack((r * np.cos(angles), r * np.sin(angles)))
 
 
-def make_ring_data(seed: int = 2207) -> dict[str, np.ndarray]:
+def make_gaussian_circle_data(seed: int = 2207) -> dict[str, np.ndarray]:
     random = np.random.default_rng(seed)
-    # Distinct counts from fraud/moons so landing n⁺/n⁻/m visibly change.
-    majority_train = _disk(random, 200, radius=0.55)
-    minority_train = _disk(random, 25, radius=1.45, thickness=0.12)
-    majority_test = _disk(random, 110, radius=0.55)
-    minority_test = _disk(random, 30, radius=1.45, thickness=0.12)
-    return {
-        "train_x": np.concatenate((majority_train, minority_train)),
-        "train_y": np.concatenate((np.zeros(len(majority_train)), np.ones(len(minority_train)))),
-        "test_x": np.concatenate((majority_test, minority_test)),
-        "test_y": np.concatenate((np.zeros(len(majority_test)), np.ones(len(minority_test)))),
-    }
+    majority_train = _disk(random, PAPER_N_MINUS, radius=1.55, thickness=0.14)
+    minority_train = np.column_stack((
+        random.normal(0.0, 0.28, PAPER_N_PLUS),
+        random.normal(0.0, 0.28, PAPER_N_PLUS),
+    ))
+    majority_test = _disk(random, PAPER_TEST_MINUS, radius=1.55, thickness=0.14)
+    minority_test = np.column_stack((
+        random.normal(0.0, 0.28, PAPER_TEST_PLUS),
+        random.normal(0.0, 0.28, PAPER_TEST_PLUS),
+    ))
+    return _pack(majority_train, minority_train, majority_test, minority_test)
+
+
+def make_circles_data(seed: int = 2207) -> dict[str, np.ndarray]:
+    random = np.random.default_rng(seed)
+    majority_train = _disk(random, PAPER_N_MINUS, radius=0.55)
+    minority_train = _disk(random, PAPER_N_PLUS, radius=1.45, thickness=0.12)
+    majority_test = _disk(random, PAPER_TEST_MINUS, radius=0.55)
+    minority_test = _disk(random, PAPER_TEST_PLUS, radius=1.45, thickness=0.12)
+    return _pack(majority_train, minority_train, majority_test, minority_test)
 
 
 def load_dataset(dataset: DatasetId, seed: int = 2207) -> dict[str, np.ndarray]:
@@ -166,8 +218,12 @@ def load_dataset(dataset: DatasetId, seed: int = 2207) -> dict[str, np.ndarray]:
         return make_fraud_data(seed)
     if dataset == "moons":
         return make_moons_data(seed)
-    if dataset == "ring":
-        return make_ring_data(seed)
+    if dataset == "swiss_roll":
+        return make_swiss_roll_data(seed)
+    if dataset == "gaussian_circle":
+        return make_gaussian_circle_data(seed)
+    if dataset == "circles":
+        return make_circles_data(seed)
     raise HTTPException(status_code=400, detail=f"Unknown dataset: {dataset}")
 
 
@@ -182,13 +238,27 @@ def dataset_summary(dataset: DatasetId, data: dict[str, np.ndarray]) -> dict:
         "name": meta["name"],
         "blurb": meta["blurb"],
         "howto": meta.get("howto", ""),
+        "group": meta.get("group", "teaching"),
         "features": [meta["feature_x"], meta["feature_y"]],
         "n_train": int(len(train_y)),
         "n_test": int(len(test_y)),
         "n_minority": n_minority,
         "n_majority": n_majority,
         "imbalance_ratio": float(n_majority / max(n_minority, 1)),
+        "m_full": int(n_majority - n_minority),
     }
+
+
+def resolve_n_synth(request: RunRequest, train_y: np.ndarray) -> tuple[int, int]:
+    m = max(0, int((train_y == 0).sum() - (train_y == 1).sum()))
+    if request.n_synthetic is not None:
+        n_synth = int(request.n_synthetic)
+    else:
+        pct = 1.0 if request.budget_pct is None else float(request.budget_pct)
+        n_synth = int(round(m * pct)) if m else 0
+        if m and pct > 0:
+            n_synth = max(1, n_synth)
+    return min(max(0, n_synth), m), m
 
 
 def graph_edges(points: np.ndarray, k: int) -> list[list[int]]:
@@ -226,25 +296,6 @@ def attach_pool_choice(metadata: list[dict], pool_size: int) -> list[dict]:
     return metadata
 
 
-def debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    # #region agent log
-    try:
-        DEBUG_LOG.parent.mkdir(exist_ok=True)
-        with DEBUG_LOG.open("a", encoding="utf-8") as log_file:
-            log_file.write(json.dumps({
-                "sessionId": "efd190",
-                "runId": "initial",
-                "hypothesisId": hypothesis_id,
-                "location": location,
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }) + "\n")
-    except OSError:
-        pass
-    # #endregion
-
-
 def train_model(points: np.ndarray, labels: np.ndarray, seed: int) -> LogisticRegression:
     model = LogisticRegression(C=1.2, class_weight=None, max_iter=2000, random_state=seed)
     model.fit(points, labels)
@@ -276,8 +327,19 @@ def serialize_points(points: np.ndarray, labels: np.ndarray) -> list[dict[str, f
 def animation_timeline(
     synthetic: list[dict],
     minority: np.ndarray,
+    method: str = "smote",
 ) -> list[dict]:
     """Describe the explainable phases used by the single-canvas renderer."""
+    if method == "random":
+        phases = ["select-parent", "commit-sample"]
+    else:
+        phases = [
+            "select-parent",
+            "connect-neighborhood",
+            "show-weights",
+            "interpolate",
+            "commit-sample",
+        ]
     timeline = []
     for index, item in enumerate(synthetic):
         parents = [int(parent) for parent in item["parents"]]
@@ -302,13 +364,7 @@ def animation_timeline(
                     "x": float(item["point"][0]),
                     "y": float(item["point"][1]),
                 },
-                "phases": [
-                    "select-parent",
-                    "connect-neighborhood",
-                    "show-weights",
-                    "interpolate",
-                    "commit-sample",
-                ],
+                "phases": phases,
             }
         )
     return timeline
@@ -325,43 +381,22 @@ def metrics(model: LogisticRegression, test_x: np.ndarray, test_y: np.ndarray) -
     }
 
 
-def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray, list[dict]]:
-    train_x, train_y = data["train_x"], data["train_y"]
-    if request.method == "original":
-        return train_x, train_y, []
-
-    minority = train_x[train_y == 1]
-    sampler = SMOTE(k=request.k, random_state=request.seed) if request.method == "smote" else SimplicialSMOTE(
-        k=request.k,
-        p=request.p,
-        random_state=request.seed,
-    )
-    sampled_x, sampled_y = sampler.fit_resample(train_x, train_y)
-    synthetic = sampled_x[len(train_x):]
-    simplices = getattr(sampler, "simplices", {})
-    if request.method == "smote" and hasattr(sampler, "sampled_simplices"):
-        parent_rows = np.asarray(sampler.sampled_simplices)
-        pool_size = len(getattr(sampler, "simplices", parent_rows))
-    elif isinstance(simplices, dict):
-        parent_rows = np.concatenate(list(simplices.values())) if simplices else np.empty((0, request.p), dtype=int)
-        pool_size = len(clique_pool(minority, request.k))
-    else:
-        parent_rows = np.asarray(simplices)
-        pool_size = len(parent_rows)
-    debug_log("A/B/C", "server.py:339", "Sampler parent pool prepared", {
-        "method": request.method,
-        "synthetic_count": len(synthetic),
-        "parent_rows_count": len(parent_rows),
-        "pool_size": pool_size,
-        "first_parent_rows": parent_rows[:12].tolist(),
-        "minority_count": len(minority),
-    })
-    # Animation λ: sample e~Exp(1) then normalize (Dir(1..1)), so the UI can show the arithmetic.
-    # Train/metrics still use `synthetic` from the official sampler above.
-    random = np.random.default_rng(request.seed)
+def _metadata_from_parents(
+    synthetic: np.ndarray,
+    minority: np.ndarray,
+    parent_rows: np.ndarray,
+    seed: int,
+    *,
+    use_official_point: bool = False,
+) -> list[dict]:
+    random = np.random.default_rng(seed)
     metadata = []
     for index, point in enumerate(synthetic):
-        parents = [int(parent) for parent in (parent_rows[index % len(parent_rows)].tolist() if len(parent_rows) else [])]
+        if len(parent_rows) == 0:
+            parents: list[int] = []
+        else:
+            row = parent_rows[index] if index < len(parent_rows) else parent_rows[index % len(parent_rows)]
+            parents = [int(parent) for parent in np.asarray(row).tolist()]
         if not parents:
             metadata.append({
                 "point": point.tolist(),
@@ -371,47 +406,101 @@ def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.nd
                 "dimension": 0,
             })
             continue
+        if len(parents) == 1:
+            metadata.append({
+                "point": minority[parents[0]].tolist() if not use_official_point else point.tolist(),
+                "parents": parents,
+                "weights": [1.0],
+                "exp_draws": [1.0],
+                "dimension": 0,
+            })
+            continue
         exp_draws = random.exponential(1.0, size=len(parents))
         weights = exp_draws / exp_draws.sum()
-        viz_point = minority[parents].T @ weights
+        viz_point = point if use_official_point else (minority[parents].T @ weights)
         metadata.append({
-            "point": viz_point.tolist(),
+            "point": np.asarray(viz_point).tolist(),
             "parents": parents,
             "weights": [float(weight) for weight in weights],
             "exp_draws": [float(value) for value in exp_draws],
             "dimension": max(len(parents) - 1, 0),
         })
-    debug_log("A/C/E", "server.py:365", "Timeline metadata prepared", {
-        "method": request.method,
-        "timeline_count": len(metadata),
-        "first_timeline": [
-            {
-                "parents": item["parents"],
-                "point": item["point"],
-                "pool_index": item.get("pool_index"),
-            }
-            for item in metadata[:12]
-        ],
-    })
+    return metadata
+
+
+def run_sampler(request: RunRequest, data: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray, list[dict], int, int]:
+    train_x, train_y = data["train_x"], data["train_y"]
+    n_synth, m_full = resolve_n_synth(request, train_y)
+    if request.method == "original":
+        return train_x, train_y, [], 0, m_full
+    if n_synth == 0:
+        return train_x, train_y, [], 0, m_full
+
+    minority = train_x[train_y == 1]
+    random = np.random.default_rng(request.seed)
+
+    if request.method == "random":
+        parent_idx = random.choice(len(minority), size=n_synth, replace=True)
+        synthetic = minority[parent_idx]
+        parent_rows = parent_idx.reshape(-1, 1)
+        metadata = _metadata_from_parents(synthetic, minority, parent_rows, request.seed, use_official_point=True)
+        metadata = attach_pool_choice(metadata, len(minority))
+        return (
+            np.concatenate((train_x, synthetic)),
+            np.concatenate((train_y, np.ones(len(synthetic)))),
+            metadata,
+            n_synth,
+            m_full,
+        )
+
+    if request.method == "global":
+        sampler = Mixup(k=2, random_state=request.seed)
+    elif request.method == "smote":
+        sampler = SMOTE(k=request.k, random_state=request.seed)
+    else:
+        sampler = SimplicialSMOTE(k=request.k, p=request.p, random_state=request.seed)
+
+    sampled_x, sampled_y = sampler.fit_resample(train_x, train_y)
+    synthetic = sampled_x[len(train_x):][:n_synth]
+    simplices = getattr(sampler, "simplices", {})
+
+    if request.method == "global":
+        parent_rows = np.asarray(sampler.simplices)[:n_synth]
+        pool_size = len(minority)
+        use_official = True
+    elif request.method == "smote" and hasattr(sampler, "sampled_simplices"):
+        parent_rows = np.asarray(sampler.sampled_simplices)[:n_synth]
+        pool_size = len(getattr(sampler, "simplices", parent_rows))
+        use_official = False
+    elif isinstance(simplices, dict):
+        parent_rows = np.concatenate(list(simplices.values())) if simplices else np.empty((0, request.p), dtype=int)
+        parent_rows = parent_rows[:n_synth]
+        pool_size = len(clique_pool(minority, request.k))
+        use_official = False
+    else:
+        parent_rows = np.asarray(simplices)
+        if parent_rows.ndim == 2 and len(parent_rows) >= n_synth:
+            # SMOTE stores all edges; choices are not stored — keep edge pool, cycle for viz.
+            pool_size = len(parent_rows)
+        else:
+            pool_size = len(parent_rows)
+        use_official = False
+
+    metadata = _metadata_from_parents(
+        synthetic,
+        minority,
+        parent_rows,
+        request.seed,
+        use_official_point=use_official,
+    )
     metadata = attach_pool_choice(metadata, pool_size if pool_size else len(parent_rows))
-    debug_log("A", "server.py:389", "Parent reuse labels attached", {
-        "method": request.method,
-        "pool_size": pool_size,
-        "unique_parent_count": len({
-            tuple(item.get("parents", []))
-            for item in metadata
-        }),
-        "first_reuse_flags": [
-            {
-                "parents": item["parents"],
-                "pool_index": item["pool_index"],
-                "parent_reused": item["parent_reused"],
-                "parent_reuse_count": item["parent_reuse_count"],
-            }
-            for item in metadata[:12]
-        ],
-    })
-    return np.concatenate((train_x, synthetic)), np.concatenate((train_y, np.ones(len(synthetic)))), metadata
+    return (
+        np.concatenate((train_x, synthetic)),
+        np.concatenate((train_y, np.ones(len(synthetic)))),
+        metadata,
+        n_synth,
+        m_full,
+    )
 
 
 @app.get("/api/fraud/datasets")
@@ -428,7 +517,7 @@ def list_datasets() -> dict:
 def run(request: RunRequest) -> dict:
     data = load_dataset(request.dataset, request.seed)
     summary = dataset_summary(request.dataset, data)
-    sampled_x, sampled_y, synthetic = run_sampler(request, data)
+    sampled_x, sampled_y, synthetic, n_synth, m_full = run_sampler(request, data)
     model = train_model(sampled_x, sampled_y, request.seed)
     minority = data["train_x"][data["train_y"] == 1]
     all_points = np.concatenate((data["train_x"], data["test_x"]))
@@ -440,12 +529,15 @@ def run(request: RunRequest) -> dict:
         "test": serialize_points(data["test_x"], data["test_y"]),
         "synthetic": synthetic,
         "minority": serialize_points(minority, np.ones(len(minority))),
-        "timeline": animation_timeline(synthetic, minority),
+        "timeline": animation_timeline(synthetic, minority, request.method),
         "edges": graph_edges(data["train_x"][data["train_y"] == 1], request.k),
         "boundary": boundary_grid(model, all_points),
         "metrics": metrics(model, data["test_x"], data["test_y"]),
         "seed": request.seed,
         "test_size": len(data["test_y"]),
+        "n_synthetic": n_synth,
+        "m_full": m_full,
+        "budget_pct": request.budget_pct,
     }
 
 

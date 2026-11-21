@@ -1,5 +1,8 @@
 const API = "http://127.0.0.1:8000";
 const STORAGE_KEY = "ssmote-demo-dataset";
+const BUDGET_KEY = "ssmote-demo-budget";
+const BUDGET_PRESETS = [0.1, 0.3, 0.7, 1.0];
+
 const FALLBACK = [
   {
     id: "fraud",
@@ -7,6 +10,7 @@ const FALLBACK = [
     blurb: "Normal transactions cluster around the origin; fraud forms two clusters.",
     howto: "Synthetic 2D: Normal around the origin (majority) plus two Normal clusters (minority). Not real transaction data.",
     features: ["transaction amount", "merchant risk"],
+    group: "teaching",
     n_train: 214,
     n_test: 134,
     n_minority: 34,
@@ -16,26 +20,54 @@ const FALLBACK = [
   {
     id: "moons",
     name: "Two moons",
-    blurb: "Two moon-shaped arcs; the minority class occupies one arc.",
-    howto: "Synthetic 2D: two arcs (angle ~Uniform[0,π], radius with Normal noise) — one majority arc and one minority arc.",
+    blurb: "Paper §4.1: two moon arcs with n⁺=50, n⁻=300.",
+    howto: "Paper synthetic: minority on one moon arc, majority on the other (50 / 300 train).",
     features: ["x", "y"],
-    n_train: 200,
-    n_test: 130,
+    group: "paper",
+    n_train: 350,
+    n_test: 150,
     n_minority: 50,
-    n_majority: 150,
-    imbalance_ratio: 150 / 50,
+    n_majority: 300,
+    imbalance_ratio: 6,
   },
   {
-    id: "ring",
-    name: "Concentric ring",
-    blurb: "The majority class is in the center; the minority class is on the outer ring.",
-    howto: "Synthetic 2D: inner disk (r ∝ √U) = majority; outer ring (angle Uniform[0,2π] plus thickness noise) = minority.",
+    id: "swiss_roll",
+    name: "Swiss roll",
+    blurb: "Paper §4.1: minority on a Swiss-roll manifold projected to 2D.",
+    howto: "Paper synthetic: minority = Swiss roll (x,z); majority fills the bounding box (50 / 300 train).",
+    features: ["x", "z"],
+    group: "paper",
+    n_train: 350,
+    n_test: 150,
+    n_minority: 50,
+    n_majority: 300,
+    imbalance_ratio: 6,
+  },
+  {
+    id: "gaussian_circle",
+    name: "Gaussian in circle",
+    blurb: "Paper §4.1: Gaussian minority blob inside a circular majority ring.",
+    howto: "Paper synthetic: majority on an outer ring; minority ~ Normal at the origin (50 / 300 train).",
     features: ["x", "y"],
-    n_train: 225,
-    n_test: 140,
-    n_minority: 25,
-    n_majority: 200,
-    imbalance_ratio: 200 / 25,
+    group: "paper",
+    n_train: 350,
+    n_test: 150,
+    n_minority: 50,
+    n_majority: 300,
+    imbalance_ratio: 6,
+  },
+  {
+    id: "circles",
+    name: "Circle in circle",
+    blurb: "Paper §4.1: concentric circles — minority on the outer ring.",
+    howto: "Paper synthetic: inner disk = majority; outer ring = minority (50 / 300 train).",
+    features: ["x", "y"],
+    group: "paper",
+    n_train: 350,
+    n_test: 150,
+    n_minority: 50,
+    n_majority: 300,
+    imbalance_ratio: 6,
   },
 ];
 
@@ -46,11 +78,31 @@ const selectedStats = document.querySelector("#selected-stats");
 const startDemo = document.querySelector("#start-demo");
 const statusEl = document.querySelector("#landing-status");
 const scenarioSample = document.querySelector("#scenario-sample");
+const budgetChips = document.querySelector("#budget-chips");
+const budgetCount = document.querySelector("#budget-count");
+const budgetReadout = document.querySelector("#budget-readout");
+
+function loadBudget() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BUDGET_KEY) || "null");
+    if (raw && (raw.mode === "pct" || raw.mode === "count")) {
+      return {
+        mode: raw.mode,
+        pct: BUDGET_PRESETS.includes(Number(raw.pct)) ? Number(raw.pct) : 1.0,
+        count: Number.isFinite(Number(raw.count)) && Number(raw.count) >= 0 ? Number(raw.count) : null,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { mode: "pct", pct: 1.0, count: null };
+}
 
 const state = {
   datasets: FALLBACK,
   selected: localStorage.getItem(STORAGE_KEY) || "fraud",
   previews: new Map(),
+  budget: loadBudget(),
 };
 
 function fmtRatio(value) {
@@ -61,9 +113,73 @@ function datasetById(id) {
   return state.datasets.find((item) => item.id === id) || state.datasets[0];
 }
 
+function fullM(item) {
+  return Math.max(0, Number(item.n_majority) - Number(item.n_minority));
+}
+
+function resolvedNSynth(item) {
+  const m = fullM(item);
+  if (state.budget.mode === "count" && Number.isFinite(state.budget.count)) {
+    return Math.min(Math.max(0, Math.floor(state.budget.count)), m);
+  }
+  const pct = state.budget.pct || 1;
+  if (!m || pct <= 0) return 0;
+  return Math.min(m, Math.max(1, Math.round(m * pct)));
+}
+
+function persistBudget() {
+  localStorage.setItem(BUDGET_KEY, JSON.stringify(state.budget));
+}
+
+function demoHref() {
+  const params = new URLSearchParams();
+  params.set("dataset", state.selected);
+  if (state.budget.mode === "count" && Number.isFinite(state.budget.count)) {
+    params.set("budget_n", String(Math.floor(state.budget.count)));
+  } else {
+    params.set("budget_pct", String(state.budget.pct));
+  }
+  params.set("t", String(Date.now()));
+  return `./demo.html?${params.toString()}`;
+}
+
+function paintBudget() {
+  if (!budgetChips) return;
+  budgetChips.innerHTML = BUDGET_PRESETS.map((pct) => {
+    const active = state.budget.mode === "pct" && state.budget.pct === pct;
+    const label = `${Math.round(pct * 100)}%`;
+    return `
+      <button
+        type="button"
+        class="budget-chip${active ? " is-active" : ""}"
+        data-pct="${pct}"
+        aria-pressed="${active ? "true" : "false"}"
+      >${label}</button>
+    `;
+  }).join("");
+  budgetChips.querySelectorAll("[data-pct]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.budget.mode = "pct";
+      state.budget.pct = Number(button.dataset.pct);
+      state.budget.count = null;
+      if (budgetCount) budgetCount.value = "";
+      persistBudget();
+      paintSelection();
+      paintBudget();
+    });
+  });
+  if (budgetCount) {
+    budgetCount.value =
+      state.budget.mode === "count" && Number.isFinite(state.budget.count)
+        ? String(state.budget.count)
+        : "";
+  }
+}
+
 function paintSelection() {
   const item = datasetById(state.selected);
-  const m = Math.max(0, Number(item.n_majority) - Number(item.n_minority));
+  const m = fullM(item);
+  const nSynth = resolvedNSynth(item);
   selectedName.textContent = item.name;
   selectedBlurb.innerHTML = `${item.blurb}<br><span class="landing-howto">${item.howto || ""}</span>`;
   selectedStats.innerHTML = `
@@ -71,7 +187,8 @@ function paintSelection() {
     <div><dt>Test</dt><dd>${item.n_test}</dd></div>
     <div><dt>n⁺ minority</dt><dd>${item.n_minority}</dd></div>
     <div><dt>n⁻ majority</dt><dd>${item.n_majority}</dd></div>
-    <div><dt>m = n⁻−n⁺</dt><dd>${m}</dd></div>
+    <div><dt>m = n⁻ − n⁺</dt><dd>${m}</dd></div>
+    <div><dt>Budget n</dt><dd>${nSynth}</dd></div>
     <div><dt>Imbalance</dt><dd>${fmtRatio(item.imbalance_ratio)}</dd></div>
     <div class="landing-stats-wide"><dt>Features</dt><dd>${item.features.join(" · ")}</dd></div>
   `;
@@ -79,18 +196,27 @@ function paintSelection() {
     scenarioSample.innerHTML = `
       Oversample the minority class with <code>k = 5</code>, <code>p = 3</code>,
       and <code>seed = 2207</code>; generate
-      <code>m = n⁻ − n⁺ = ${item.n_majority} − ${item.n_minority} = ${m}</code> points.
+      <code>n_synth = ${nSynth}</code> of
+      <code>m = n⁻ − n⁺ = ${item.n_majority} − ${item.n_minority} = ${m}</code>.
     `;
   }
   const glossary = document.querySelector("#scenario-glossary");
   if (glossary) {
     glossary.innerHTML = `
-      <code>n⁺</code> = minority (positive, the class to augment) = <strong>${item.n_minority}</strong> ·
-      <code>n⁻</code> = majority (negative, the target count) = <strong>${item.n_majority}</strong> ·
-      <code>m = n⁻ − n⁺</code> = <strong>${m}</strong> to balance the two classes.
+      <code>n⁺</code> = minority = <strong>${item.n_minority}</strong> ·
+      <code>n⁻</code> = majority = <strong>${item.n_majority}</strong> ·
+      <code>m = n⁻ − n⁺</code> = <strong>${m}</strong> ·
+      budget generates <strong>${nSynth}</strong> synthetic points.
     `;
   }
-  startDemo.href = `./demo.html?dataset=${encodeURIComponent(state.selected)}&t=${Date.now()}`;
+  if (budgetReadout) {
+    const modeLabel =
+      state.budget.mode === "count"
+        ? `custom count ${nSynth}`
+        : `${Math.round((state.budget.pct || 1) * 100)}% of m`;
+    budgetReadout.textContent = `m = ${m} → generate n_synth = ${nSynth} (${modeLabel})`;
+  }
+  startDemo.href = demoHref();
 }
 
 function selectDataset(id) {
@@ -105,6 +231,10 @@ function renderCards() {
   grid.innerHTML = state.datasets
     .map((item) => {
       const active = item.id === state.selected;
+      const badge =
+        item.group === "paper"
+          ? '<span class="dataset-pill dataset-pill-muted">Paper §4.1</span>'
+          : '<span class="dataset-pill dataset-pill-muted">Teaching</span>';
       return `
         <button
           class="dataset-card${active ? " is-active" : ""}"
@@ -115,13 +245,12 @@ function renderCards() {
         >
           <div class="dataset-card-head">
             <strong>${item.name}</strong>
-            ${active ? '<span class="dataset-pill">Selected</span>' : ""}
+            ${active ? '<span class="dataset-pill">Selected</span>' : badge}
           </div>
           <p>${item.blurb}</p>
-          <p class="landing-howto">${item.howto || ""}</p>
           <canvas class="dataset-preview" width="280" height="140" aria-hidden="true" data-preview="${item.id}"></canvas>
           <div class="dataset-meta">
-            <span>${item.n_minority} minority</span>
+            <span>${item.n_minority} / ${item.n_majority}</span>
             <span>${fmtRatio(item.imbalance_ratio)}</span>
           </div>
         </button>
@@ -183,7 +312,9 @@ async function loadPreview(id) {
         ...state.datasets[index],
         name: data.name || state.datasets[index].name,
         blurb: data.blurb || state.datasets[index].blurb,
+        howto: data.howto || state.datasets[index].howto,
         features: data.features || state.datasets[index].features,
+        group: data.group || state.datasets[index].group,
         n_train: data.n_train,
         n_test: data.n_test,
         n_minority: data.n_minority,
@@ -199,7 +330,31 @@ async function loadPreview(id) {
   }
 }
 
+function bindBudgetInput() {
+  if (!budgetCount) return;
+  budgetCount.addEventListener("input", () => {
+    const raw = budgetCount.value.trim();
+    if (raw === "") {
+      state.budget.mode = "pct";
+      state.budget.count = null;
+      persistBudget();
+      paintSelection();
+      paintBudget();
+      return;
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) return;
+    state.budget.mode = "count";
+    state.budget.count = Math.floor(value);
+    persistBudget();
+    paintSelection();
+    paintBudget();
+  });
+}
+
 async function boot() {
+  bindBudgetInput();
+  paintBudget();
   renderCards();
   paintSelection();
   try {

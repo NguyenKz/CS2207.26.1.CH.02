@@ -108,21 +108,17 @@ Mẫu minh họa (λ chọn tay, không từ RNG):
 
 ## Demo hiện tại (`CK/demo/`)
 
-- **Nguồn dataset demo:** cả 3 bộ đều **synthetic** trong `backend/server.py` (không lấy từ paper/bank):
-  - Fraud: `Normal` quanh gốc (đa số) + 2 cụm `Normal` (thiểu số).
-  - Moons: hai cung tròn, góc `Uniform[0,π]`, bán kính nhiễu `Normal`.
-  - Ring: đĩa trong `r∝√U` (đa số) + vành ngoài góc `Uniform[0,2π]` (thiểu số).
+- **Nguồn dataset demo** (`backend/server.py`):
+  - **Teaching:** Fraud — `Normal` quanh gốc (đa số) + 2 cụm `Normal` (thiểu số).
+  - **Paper §4.1 synthetic** (train `n⁺=50`, `n⁻=300`): moons, swiss_roll (chiếu 2D), gaussian_circle, circles (circle-in-circle). Không dùng 21 benchmark HDF5.
   Landing hiện trường `howto` trên từng card.
-- **Landing (`index.html`):** hiện kịch bản demo trước khi chọn dataset:
-  1. Tạo mẫu với `k = 5`, `p = 3`, `seed = 2207`, `m = n⁻ − n⁺` (có chú thích `n⁺` = thiểu số, `n⁻` = đa số + số cụ thể theo dataset).
-  2. Train `LogisticRegression` trên train đã cân bằng.
-  3. Đo trên test: recall, precision, F1, FN, FP.
-  4. So sánh **3 method**: Original, SMOTE, Simplicial.
-- **Làm gì trên canvas:** tạo mẫu (`original`, `smote`, `simplicial`), train `LogisticRegression` trên dữ liệu đã tăng cường, rồi tính recall, precision, F1 và số FN, FP trên tập test (`backend/server.py`, hàm `run_sampler`, `train_model`, `metrics`). Random oversampling đã bỏ khỏi demo vì step animation không khớp (chỉ copy điểm).
-- **Step “Nối neighborhood” trên canvas:** chỉ biểu diễn (vẽ cạnh + hiện `d`). Khoảng cách thật đã dùng khi dựng k-NN/pool trước đó; step này không tính thêm gì cho thuật toán.
-- **Dữ liệu:** một dataset gian lận tổng hợp do `make_fraud_data` sinh ra, không phải benchmark của paper.
-- **Không có:** 21 dataset, k-NN, Gradient Boosting, cross-validation, MCC, kiểm định thống kê, và các biến thể Borderline, Safe-level, ADASYN.
-- **Animation λ:** demo tự lấy `eⱼ ~ Exp(1)`, `λⱼ = eⱼ/Σe`, rồi nội suy điểm trên timeline từ `λ` đó để hiện phép tính. Điểm synthetic dùng để train/F1 vẫn đến từ sampler chính thức — có thể khác điểm trên animation.
+- **Budget (chỉ trên `index.html`):** chọn `10% / 30% / 70% / 100%` của `m = n⁻ − n⁺`, hoặc nhập **custom count**. Truyền qua query (`budget_pct` / `budget_n`) + `localStorage`; canvas chỉ đọc, không chỉnh.
+- **Landing:** kịch bản demo → chọn dataset → budget → Start demo.
+- **Methods trên canvas:** Original, **Random** (duplicate minority), **Global** (`Mixup` k=2 từ vendor `ssmote` = baseline convex-pair của paper), SMOTE, Simplicial. Random dùng timeline ngắn (select → commit).
+- **Làm gì trên canvas:** gọi `/api/fraud/run`, train `LogisticRegression`, đo recall / precision / F1 / FN / FP trên test.
+- **Step “Nối neighborhood”:** chỉ biểu diễn; không tính thêm cho thuật toán.
+- **Không có:** 21 UCI/HDF5, Borderline / Safe-level / ADASYN, chỉnh k/p/seed trên UI.
+- **Animation λ:** demo tự lấy `eⱼ ~ Exp(1)`, `λⱼ = eⱼ/Σe` để hiện phép tính. Điểm train/F1 vẫn từ sampler chính thức (Global dùng điểm Mixup thật trên timeline).
 - **Lỗi còn lại:** với SMOTE, mapping parent có thể lệch (`parent_rows[index % len]`). Không dùng animation làm bằng chứng tuyệt đối cho từng sample của sampler.
 
 ## Lưu ý khi làm đồ án
