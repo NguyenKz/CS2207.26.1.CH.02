@@ -425,6 +425,7 @@ input:focus, select:focus, button:focus-visible, .plot-hit:focus-visible {
   font-size: 0.84rem;
   line-height: 1.45;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .landing-scenario-steps code {
   font-size: 0.8rem;

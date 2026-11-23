@@ -628,33 +628,288 @@ Canvas vẽ web k-NN màu xám để người xem thấy các cạnh ứng viên
 
 ### 5.7 Simplicial SMOTE
 
-Simplicial SMOTE mở rộng ý tưởng SMOTE từ một cạnh sang một nhóm nhiều điểm gần nhau.
+Simplicial SMOTE mở rộng SMOTE từ việc chọn **hai điểm tạo thành một cạnh** sang việc chọn **một nhóm nhiều điểm gần nhau tạo thành một simplex**. Phần dưới đây là cách trình bày từng bước khi giáo viên hỏi.
 
-1. App đưa train đã chuẩn hóa vào `SimplicialSMOTE(k=5, p=3, random_state=seed)`.
-2. Sampler lấy riêng minority train, không lấy majority để dựng simplex.
-3. Sampler dựng đồ thị k-NN trên 50 minority points.
-4. Hai điểm được nối nếu một điểm nằm trong 5 hàng xóm của điểm kia hoặc ngược lại.
-5. Sampler tìm các clique, tức các nhóm mà mọi cặp điểm đều có cạnh.
-6. Với cấu hình demo, sampler xét nhóm có tối đa 3 đỉnh theo quy ước code/vendor. Nhóm 3 đỉnh tạo thành một tam giác trong không gian 2D.
-7. Mỗi lần sinh mẫu, sampler chọn một simplex ứng viên, có thể chọn lại simplex cũ.
-8. Sampler tạo các trọng số barycentric không âm và có tổng bằng 1:
+#### Bước 1 — Chuẩn bị dữ liệu minority
 
-```text
-λ₁ ≥ 0, λ₂ ≥ 0, λ₃ ≥ 0
-λ₁ + λ₂ + λ₃ = 1
+> “Đầu tiên, thuật toán chỉ lấy các điểm của lớp minority trong tập train. Thuật toán không lấy các điểm test và cũng không dùng các điểm majority để dựng simplex. Trong demo, sau khi chuẩn hóa, tập minority train có 50 điểm. Mục tiêu của sampler là sinh thêm 250 điểm minority.”
+
+Trong code, tập minority được lấy tương đương:
+
+```python
+minority = train_x[train_y == 1]
 ```
 
-9. Điểm mới được tính:
+Ở đây, `train_y == 1` chọn đúng các điểm minority. Majority có nhãn `0`, còn test đã được tách riêng từ trước.
 
-```text
-x̂ = λ₁x₁ + λ₂x₂ + λ₃x₃
+#### Bước 2 — Dựng đồ thị k-NN trên minority
+
+> “Tiếp theo, thuật toán dựng một đồ thị k-NN trên 50 điểm minority. Với cấu hình demo, k bằng 5. Điều đó có nghĩa là với mỗi điểm, thuật toán tìm 5 điểm minority gần nhất theo khoảng cách Euclid.”
+
+Có thể hiểu bằng các bước nhỏ:
+
+1. Thuật toán lấy một điểm minority, ví dụ `P1`.
+2. Thuật toán tính khoảng cách từ `P1` đến các điểm minority còn lại.
+3. Thuật toán sắp xếp các khoảng cách từ nhỏ đến lớn.
+4. Thuật toán chọn 5 điểm gần `P1` nhất.
+5. Thuật toán thực hiện việc này cho tất cả minority points.
+6. Hai điểm được xem là có cạnh nếu một điểm nằm trong nhóm hàng xóm của điểm kia hoặc ngược lại.
+
+> “Các cạnh màu xám trên canvas chính là các quan hệ hàng xóm này. Đây là bước tạo mô hình hình học cục bộ, chứ chưa phải bước tạo điểm synthetic.”
+
+Code vendor thực hiện ý tưởng này bằng `kneighbors_graph`:
+
+```python
+A = kneighbors_graph(
+    X[y == 1],
+    n_neighbors=5,
+)
+A = ((A + A.T) > 0).astype(int).toarray()
+G = nx.from_numpy_array(A)
 ```
 
-10. Vì các trọng số không âm và tổng bằng 1, x̂ nằm trong tam giác tạo bởi ba parent.
-11. Sampler lặp lại cho đến khi tạo đủ 250 synthetic points.
-12. App nối các điểm mới vào train, train KNN và chỉ đánh giá trên test độc lập.
+`A + A.T` làm cho đồ thị đối xứng. Vì vậy, nếu `P1` xem `P2` là hàng xóm hoặc `P2` xem `P1` là hàng xóm thì canvas có thể vẽ cạnh giữa hai điểm.
 
-Trong phần animation, app lưu parent indices và dựng metadata để giải thích. Các giá trị `exp_draws` và `weights` được dùng để minh họa cách tính trọng số trên canvas. Điểm synthetic dùng cho train và metric vẫn là điểm do sampler chính thức tạo.
+#### Bước 2.1 — Tìm clique và tạo pool simplex
+
+> “Sau khi có đồ thị, thuật toán tìm các clique. Clique là một nhóm điểm mà mọi cặp điểm trong nhóm đều có cạnh nối với nhau. Nếu ba điểm A, B và C đều nối đôi một, nhóm `{A, B, C}` là một clique. Trong không gian hai chiều, ba đỉnh này tạo thành một tam giác.”
+
+Ví dụ:
+
+```text
+{A, B}       → nhóm 2 điểm → đoạn thẳng
+{A, B, C}    → nhóm 3 điểm → tam giác
+{A, B, C, D} → nhóm 4 điểm → simplex lớn hơn
+```
+
+Tham số `p = 3` trong **code/vendor hiện tại** nghĩa là sampler có thể dùng tối đa 3 đỉnh cho một simplex được chọn. Vì vậy:
+
+- nhóm có 2 đỉnh vẫn có thể được chọn và tạo ra một đoạn;
+- nhóm có 3 đỉnh có thể được chọn và tạo ra một tam giác;
+- `p = 3` không có nghĩa là mọi sample chắc chắn có đúng 3 đỉnh.
+
+Đây là lý do một vài sample đầu có thể hiển thị `2 vertices`, còn những sample sau hiển thị `3 vertices`. Khi muốn trình diễn rõ phần khác SMOTE, người trình bày cần bấm **Next** đến sample có `3 vertices · dim 2`.
+
+Code tìm maximal cliques bằng NetworkX:
+
+```python
+clique_complex = nx.find_cliques(G)
+```
+
+> “Pool trong animation là danh sách các nhóm ứng viên mà sampler có thể chọn. Pool này không phải là một thuật toán clustering như K-means. Đây là các clique được tạo từ đồ thị k-NN.”
+
+#### Bước 2.2 — Chọn một simplex trong pool
+
+> “Mỗi lần cần sinh một điểm mới, sampler chọn một simplex trong pool. Sampler có thể chọn lại cùng một simplex nhiều lần, vì việc chọn được thực hiện có hoàn lại. Một simplex được chọn nhiều lần sẽ tạo ra nhiều điểm synthetic khác nhau nhờ các trọng số ngẫu nhiên khác nhau.”
+
+Trong vendor, việc chọn được thực hiện bằng bộ sinh số ngẫu nhiên của NumPy. Các simplex có kích thước khác nhau được phân thành các nhóm, sau đó sampler chọn kích thước và chọn mặt phù hợp trong giới hạn `p`.
+
+Với một simplex có ba đỉnh, ta đặt tên ba parent là:
+
+```text
+P1 = (P1_x, P1_y)
+P2 = (P2_x, P2_y)
+P3 = (P3_x, P3_y)
+```
+
+> “Bước chọn simplex là bước thuật toán thật. Canvas có thể hiện bước này bằng dòng `Select a cluster from the pool` để người xem biết nhóm nào đang được chọn. Từ ‘cluster’ trên canvas chỉ là cách gọi dễ hiểu cho một nhóm ứng viên; về thuật toán, tên chính xác hơn là clique hoặc simplex.”
+
+#### Bước 2.3 — Phần animation `connect-neighborhood`
+
+> “Sau khi chọn simplex, canvas có một bước nối các parent. Bước này chủ yếu để người xem nhìn thấy rằng các parent thật sự có quan hệ hàng xóm với nhau. Các đường nối không tạo thêm dữ liệu và cũng không thay đổi kết quả của sampler.”
+
+Cụ thể:
+
+- các cạnh xám nền là k-NN graph;
+- các cạnh được highlight là các cạnh giữa parent đang được chọn;
+- nếu có ba parent, ba cạnh của chúng tạo thành đường bao tam giác;
+- vùng tam giác được tô để minh họa vùng mà điểm mới có thể nằm bên trong.
+
+> “Phần animation này là phần giải thích trực quan. Thuật toán chính đã dựng graph và chọn simplex ở các bước trước; việc canvas vẽ từng đường nối không phải là một bước tính toán mới.”
+
+#### Bước 2.4 — Sinh số ngẫu nhiên `e₁`, `e₂`, `e₃`
+
+> “Sau khi chọn ba parent, thuật toán cần chọn điểm nào đó bên trong tam giác. Để làm việc này, thuật toán cần ba trọng số. Trước hết, thuật toán sinh ba số ngẫu nhiên dương `e₁`, `e₂`, `e₃`.”
+
+Các số này được sinh từ phân phối mũ:
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(2207)
+e = rng.exponential(scale=1.0, size=3)
+
+e1, e2, e3 = e
+print("e1 =", e1)
+print("e2 =", e2)
+print("e3 =", e3)
+```
+
+Ta gọi chúng là `e₁`, `e₂`, `e₃` vì mỗi `eᵢ` là một **exponential draw**, tức một lần rút số từ phân phối Exponential(1). Chữ `e` ở đây là tên biến để nhớ “exponential”; nó không phải số Euler `e ≈ 2.718`.
+
+> “Tại sao phải dùng số dương? Vì các trọng số barycentric cần không âm. Khi tất cả `eᵢ` đều dương, sau khi chuẩn hóa chúng ta sẽ nhận được các trọng số không âm.”
+
+Với ba parent, ta có:
+
+```text
+e1 > 0
+e2 > 0
+e3 > 0
+```
+
+#### Bước 2.5 — Tính tổng các exponential draws
+
+> “Tiếp theo, thuật toán cộng ba số vừa sinh để tạo tổng chuẩn hóa.”
+
+```python
+sum_e = e1 + e2 + e3
+print("sum_e =", sum_e)
+```
+
+Về mặt công thức:
+
+```text
+sum_e = e1 + e2 + e3
+```
+
+#### Bước 2.6 — Đổi `eᵢ` thành trọng số `λᵢ`
+
+> “Sau đó, thuật toán chia từng số `eᵢ` cho tổng `sum_e`. Kết quả là các trọng số `λ₁`, `λ₂`, `λ₃`.”
+
+```python
+lambda1 = e1 / sum_e
+lambda2 = e2 / sum_e
+lambda3 = e3 / sum_e
+
+print("lambda1 =", lambda1)
+print("lambda2 =", lambda2)
+print("lambda3 =", lambda3)
+print("lambda sum =", lambda1 + lambda2 + lambda3)
+```
+
+Vì tất cả `eᵢ` đều dương nên:
+
+```text
+lambda1 >= 0
+lambda2 >= 0
+lambda3 >= 0
+lambda1 + lambda2 + lambda3 = 1
+```
+
+> “Ba trọng số này được gọi là barycentric coordinates. Chúng cho biết điểm mới lấy bao nhiêu phần từ mỗi parent. Nếu `lambda2` lớn nhất thì điểm mới thường nằm gần parent thứ hai hơn.”
+
+Việc lấy `eᵢ ~ Exp(1)` rồi chia cho tổng tạo ra:
+
+```text
+lambda = (lambda1, lambda2, lambda3)
+lambda ~ Dirichlet(1, 1, 1)
+```
+
+`Dirichlet(1, 1, 1)` là phân phối đều trên tam giác. Nói dễ hiểu, điểm mới có thể xuất hiện ở nhiều vị trí khác nhau trong tam giác, thay vì luôn nằm gần một đỉnh cố định.
+
+#### Bước 2.7 — Tính tọa độ `x_new` và `y_new`
+
+> “Cuối cùng, thuật toán tính từng tọa độ của điểm mới. Thuật toán không cộng cả hai tọa độ trong một bước khó nhìn; nó tính riêng hoành độ `x` và tung độ `y`.”
+
+Giả sử ba parent là:
+
+```text
+P1 = (P1_x, P1_y)
+P2 = (P2_x, P2_y)
+P3 = (P3_x, P3_y)
+```
+
+Hoành độ của điểm mới là:
+
+```text
+x_new = P1_x * lambda1 + P2_x * lambda2 + P3_x * lambda3
+```
+
+Tung độ của điểm mới là:
+
+```text
+y_new = P1_y * lambda1 + P2_y * lambda2 + P3_y * lambda3
+```
+
+Ghép lại:
+
+```text
+P_new = (x_new, y_new)
+```
+
+Code Python tương ứng:
+
+```python
+P1 = np.array([0.0, 0.0])
+P2 = np.array([1.0, 0.0])
+P3 = np.array([0.0, 1.0])
+
+P_new = (
+    lambda1 * P1
+    + lambda2 * P2
+    + lambda3 * P3
+)
+
+x_new = lambda1 * P1[0] + lambda2 * P2[0] + lambda3 * P3[0]
+y_new = lambda1 * P1[1] + lambda2 * P2[1] + lambda3 * P3[1]
+
+print("P_new =", P_new)
+print("x_new =", x_new)
+print("y_new =", y_new)
+```
+
+Ví dụ nếu:
+
+```text
+P1 = (0.0, 0.0)
+P2 = (1.0, 0.0)
+P3 = (0.0, 1.0)
+
+lambda1 = 0.2
+lambda2 = 0.5
+lambda3 = 0.3
+```
+
+thì:
+
+```text
+x_new = 0.0 × 0.2 + 1.0 × 0.5 + 0.0 × 0.3 = 0.5
+y_new = 0.0 × 0.2 + 0.0 × 0.5 + 1.0 × 0.3 = 0.3
+
+P_new = (0.5, 0.3)
+```
+
+> “Vì cả ba trọng số đều không âm và tổng bằng 1, `P_new` chắc chắn nằm trong tam giác `P1-P2-P3`. Đây chính là lý do điểm mới không bị đẩy ra ngoài simplex.”
+
+#### Bước 2.8 — Commit điểm synthetic
+
+> “Sau khi tính xong `P_new`, sampler gắn nhãn minority bằng 1 và thêm điểm đó vào tập train. Canvas hiển thị điểm này bằng màu xanh lá. Điểm test không bị thay đổi.”
+
+Quy trình lặp lại cho đến khi đủ 250 synthetic points:
+
+```text
+chọn simplex
+→ sinh e_i
+→ tính tổng e
+→ tính lambda_i
+→ tính x_new, y_new
+→ thêm điểm mới vào train
+→ lặp lại
+```
+
+#### Bước 2.9 — Kết nối với các bước trên canvas
+
+Các bước trên canvas có thể được đọc như sau:
+
+| Bước trên canvas | Ý nghĩa thật |
+|------------------|--------------|
+| Select parent / cluster | Chọn một simplex ứng viên trong pool |
+| Connect neighborhood | Minh họa các cạnh giữa các parent; không tạo thêm dữ liệu |
+| Show weights | Hiển thị `e_i`, tổng `e` và `lambda_i` để giải thích trọng số |
+| Interpolate | Minh họa điểm chạy từ các parent đến vị trí weighted average |
+| Commit sample | Thêm điểm synthetic vào train |
+
+> “Canvas không thay thế sampler. Canvas chỉ lấy metadata của sampler để kể lại từng bước. Điểm dùng để train và tính metric vẫn là điểm do sampler backend tạo ra.”
 
 ### 5.8 Ví dụ tính một điểm Simplicial bằng tay
 
