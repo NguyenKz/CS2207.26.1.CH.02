@@ -1,4 +1,8 @@
-const API = "http://127.0.0.1:8000";
+// Local two-port run.sh keeps API on :8000; ngrok/same-origin share uses "".
+const API =
+  location.hostname === "127.0.0.1" || location.hostname === "localhost"
+    ? "http://127.0.0.1:8000"
+    : "";
 const STORAGE_KEY = "ssmote-demo-dataset";
 const DATASET_IDS = new Set(["fraud", "moons", "swiss_roll", "gaussian_circle", "circles"]);
 const params = new URLSearchParams(window.location.search);
@@ -12,10 +16,11 @@ try {
 }
 
 const METHODS = [
-  { id: "original", label: "Original", note: "No oversampling" },
-  { id: "random", label: "Random Oversampling", note: "Duplicate minority points" },
-  { id: "global", label: "Global Mixup", note: "Global convex-pair sampling" },
+  // Labels match paper §4.1 table: Imbalanced / Gaussian / Random / Global / SMOTE / Simplicial.
+  { id: "original", label: "Imbalanced", note: "No oversampling" },
   { id: "gaussian", label: "Gaussian", note: "Fit minority distribution" },
+  { id: "random", label: "Random", note: "Duplicate minority points" },
+  { id: "global", label: "Global", note: "Convex combination of a random minority pair" },
   { id: "smote", label: "SMOTE", note: "Interpolate along edges" },
   { id: "simplicial", label: "Simplicial SMOTE", note: "Generate inside simplices" },
 ];
@@ -25,7 +30,7 @@ const COLORS = {
   panelBorder: "#e5e7eb",
   normal: "#64748b",
   fraud: "#dc2626",
-  test: "#ea580c",
+  test: "#9333a3",
   synthetic: "#059669",
   ink: "#1f2937",
   muted: "#6b7280",
@@ -53,6 +58,22 @@ const PHASE_LABELS = {
   interpolate: "Interpolate the new point",
   "commit-sample": "Commit synthetic sample",
 };
+const PHASE_LABELS_BY_METHOD = {
+  random: {
+    "select-parent": "Select a minority parent to duplicate",
+    "commit-sample": "Commit duplicated sample",
+  },
+  global: {
+    "select-parent": "Select a random minority pair",
+    "show-weights": "Draw e with RNG → normalize λ",
+    interpolate: "Interpolate along the pair",
+    "commit-sample": "Commit synthetic sample",
+  },
+  gaussian: {
+    "select-parent": "Draw from minority covariance",
+    "commit-sample": "Commit Gaussian sample",
+  },
+};
 const PHASE_DURATIONS = {
   "select-parent": 2200,
   "connect-neighborhood": 2000,
@@ -63,10 +84,19 @@ const PHASE_DURATIONS = {
 const PHASE_NAMES = PHASES.map((id) => PHASE_LABELS[id]);
 const DURATIONS = PHASES.map((id) => PHASE_DURATIONS[id]);
 
+function usesNeighborhoodGraph(methodId = state.active) {
+  return methodId === "smote" || methodId === "simplicial";
+}
+
+function phaseLabel(methodId, phaseId) {
+  return PHASE_LABELS_BY_METHOD[methodId]?.[phaseId] || PHASE_LABELS[phaseId] || phaseId;
+}
+
 function phasesFor(methodId, result) {
   const item = result?.timeline?.[0];
   if (item?.phases?.length) return item.phases;
-  if (methodId === "random") return ["select-parent", "commit-sample"];
+  if (methodId === "random" || methodId === "gaussian") return ["select-parent", "commit-sample"];
+  if (methodId === "global") return ["select-parent", "show-weights", "interpolate", "commit-sample"];
   return PHASES;
 }
 
@@ -149,9 +179,28 @@ function stepCalcLines(item, stepIndex) {
   const parentPoints = (item.parent_points || []).map(pointObject);
   const labels = parents.map((parent) => `P${parent + 1}`);
   const phaseName = (item.phases || PHASES)[stepIndex] || PHASES[stepIndex];
+  const method = state.active;
 
   if (phaseName === "select-parent") {
-    if (!parents.length) return ["No cluster"];
+    if (method === "gaussian") {
+      return ["N(μ, Σ) over minority train", `sample → ${fmtPoint(item.point)}`];
+    }
+    if (!parents.length) return ["No parent selected"];
+    if (method === "random") {
+      const parent = parentPoints[0];
+      return [
+        `parent → ${labels[0] || "P"}`,
+        parent ? `copy ${fmtPoint(parent)}` : "duplicate minority point",
+      ].filter(Boolean);
+    }
+    if (method === "global") {
+      const lines = [`random minority pair (${parents.length})`];
+      labels.forEach((label, index) => {
+        const point = parentPoints[index];
+        lines.push(point ? `${label} = ${fmtPoint(point)}` : label);
+      });
+      return lines;
+    }
     const size = Number(item.pool_size) || 0;
     const lines = [
       `pool size = ${size || "—"}`,
@@ -197,6 +246,10 @@ function stepCalcLines(item, stepIndex) {
     return [`P = ${terms.join(" + ")}`, `P = ${fmtPoint(result)}`];
   }
 
+  if (method === "gaussian") return [`Commit ${fmtPoint(item.point)}`, "no parent links"];
+  if (method === "random") {
+    return [`Commit ${fmtPoint(item.point)}`, `duplicate of ${labels[0] || "parent"}`];
+  }
   return [
     `Commit ${fmtPoint(item.point)}`,
     `parents [${labels.join(", ")}]`,
@@ -283,6 +336,81 @@ function parentConnectionPairs(count) {
     for (let j = i + 1; j < count; j += 1) pairs.push([i, j]);
   }
   return pairs;
+}
+
+/** 2σ covariance ellipse of minority points in data space (for Gaussian visuals). */
+function minorityCovarianceEllipse(points) {
+  if (!points || points.length < 2) return null;
+  const n = points.length;
+  let mx = 0;
+  let my = 0;
+  for (const p of points) {
+    mx += p.x;
+    my += p.y;
+  }
+  mx /= n;
+  my /= n;
+  let cxx = 0;
+  let cxy = 0;
+  let cyy = 0;
+  for (const p of points) {
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    cxx += dx * dx;
+    cxy += dx * dy;
+    cyy += dy * dy;
+  }
+  const denom = Math.max(n - 1, 1);
+  cxx /= denom;
+  cxy /= denom;
+  cyy /= denom;
+  const trace = cxx + cyy;
+  const det = cxx * cyy - cxy * cxy;
+  const disc = Math.sqrt(Math.max(0, (trace * trace) / 4 - det));
+  const l1 = Math.max(trace / 2 + disc, 0);
+  const l2 = Math.max(trace / 2 - disc, 0);
+  let angle = 0;
+  if (Math.abs(cxy) > 1e-12) angle = Math.atan2(l1 - cxx, cxy);
+  else if (cxx < cyy) angle = Math.PI / 2;
+  return {
+    cx: mx,
+    cy: my,
+    rx: Math.sqrt(l1) * 2,
+    ry: Math.sqrt(l2) * 2,
+    angle,
+  };
+}
+
+function drawCovarianceEllipse(ellipse, result, view, alpha = 0.55) {
+  if (!ellipse) return;
+  const center = toScreen({ x: ellipse.cx, y: ellipse.cy }, result, view);
+  const right = toScreen({ x: ellipse.cx + Math.cos(ellipse.angle) * ellipse.rx, y: ellipse.cy + Math.sin(ellipse.angle) * ellipse.rx }, result, view);
+  const up = toScreen(
+    {
+      x: ellipse.cx + Math.cos(ellipse.angle + Math.PI / 2) * ellipse.ry,
+      y: ellipse.cy + Math.sin(ellipse.angle + Math.PI / 2) * ellipse.ry,
+    },
+    result,
+    view,
+  );
+  const rx = Math.hypot(right[0] - center[0], right[1] - center[1]);
+  const ry = Math.hypot(up[0] - center[0], up[1] - center[1]);
+  const screenAngle = Math.atan2(right[1] - center[1], right[0] - center[0]);
+  ctx.save();
+  ctx.translate(center[0], center[1]);
+  ctx.rotate(screenAngle);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, Math.max(rx, 1), Math.max(ry, 1), 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#05966922";
+  ctx.globalAlpha = alpha;
+  ctx.fill();
+  ctx.strokeStyle = COLORS.synthetic;
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function drawConnectionEdge(a, b, t, color, width = 2.4) {
@@ -668,13 +796,12 @@ function drawSideMenu(ui, result) {
   if (!result || !result.timeline?.length) {
     ctx.fillStyle = COLORS.sideMuted;
     ctx.font = "13px system-ui";
-    wrapText(
-      result ? "This method does not generate synthetic samples." : "Click Run to load data.",
-      x + inner,
-      cy,
-      contentW,
-      16,
-    );
+    const emptyMsg = !result
+      ? "Click Run to load data."
+      : state.active === "original" || !(result.n_synthetic > 0)
+        ? "This method does not generate synthetic samples."
+        : "Animation steps will appear when the method exposes a timeline.";
+    wrapText(emptyMsg, x + inner, cy, contentW, 16);
     cy += 40;
   } else {
     const item = activeItem(result);
@@ -693,7 +820,7 @@ function drawSideMenu(ui, result) {
 
     const phaseIds = item?.phases || activePhaseList(result);
     phaseIds.forEach((phaseId, index) => {
-      const name = PHASE_LABELS[phaseId] || phaseId;
+      const name = phaseLabel(state.active, phaseId);
       const done = index < state.phaseIndex;
       const current = index === state.phaseIndex;
       // Compact non-current steps to avoid side-panel overflow.
@@ -854,8 +981,9 @@ function drawPlot(ui, result) {
 
   const minority = result.minority || result.train.filter((p) => p.label === 1);
   const item = activeItem(result);
+  const method = state.active;
   const phaseName = activePhaseName(result);
-  // Map named phases onto the original 0..4 ranks so Random's short timeline still works.
+  // Map named phases onto the original 0..4 ranks so short timelines still work.
   const phase = ({
     "select-parent": 0,
     "connect-neighborhood": 1,
@@ -865,36 +993,43 @@ function drawPlot(ui, result) {
   })[phaseName] ?? state.phaseIndex;
   const progress = state.phaseElapsed / (PHASE_DURATIONS[phaseName] || DURATIONS[state.phaseIndex] || 1);
   const activeParents = new Set(item?.parents || []);
+  const showKnn = usesNeighborhoodGraph(method);
 
-  // Base k-NN edges: visible, but quieter than the selected cluster edges.
-  result.edges.forEach(([a, b]) => {
-    if (!minority[a] || !minority[b]) return;
-    const active = activeParents.has(a) && activeParents.has(b);
-    if (active) return;
-    const p1 = toScreen(minority[a], result, view);
-    const p2 = toScreen(minority[b], result, view);
-    ctx.strokeStyle = "#94a3b8";
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 1.35;
-    ctx.beginPath();
-    ctx.moveTo(...p1);
-    ctx.lineTo(...p2);
-    ctx.stroke();
-  });
-  result.edges.forEach(([a, b]) => {
-    if (!minority[a] || !minority[b]) return;
-    if (!(activeParents.has(a) && activeParents.has(b))) return;
-    const p1 = toScreen(minority[a], result, view);
-    const p2 = toScreen(minority[b], result, view);
-    ctx.strokeStyle = COLORS.accent;
+  // Base k-NN edges only for local neighborhood methods (SMOTE / Simplicial).
+  if (showKnn) {
+    (result.edges || []).forEach(([a, b]) => {
+      if (!minority[a] || !minority[b]) return;
+      const active = activeParents.has(a) && activeParents.has(b);
+      if (active) return;
+      const p1 = toScreen(minority[a], result, view);
+      const p2 = toScreen(minority[b], result, view);
+      ctx.strokeStyle = "#94a3b8";
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1.35;
+      ctx.beginPath();
+      ctx.moveTo(...p1);
+      ctx.lineTo(...p2);
+      ctx.stroke();
+    });
+    (result.edges || []).forEach(([a, b]) => {
+      if (!minority[a] || !minority[b]) return;
+      if (!(activeParents.has(a) && activeParents.has(b))) return;
+      const p1 = toScreen(minority[a], result, view);
+      const p2 = toScreen(minority[b], result, view);
+      ctx.strokeStyle = COLORS.accent;
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(...p1);
+      ctx.lineTo(...p2);
+      ctx.stroke();
+    });
     ctx.globalAlpha = 1;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(...p1);
-    ctx.lineTo(...p2);
-    ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
+  }
+
+  if (method === "gaussian") {
+    drawCovarianceEllipse(minorityCovarianceEllipse(minority), result, view, item ? 0.7 : 0.45);
+  }
 
   result.train
     .filter((p) => !p.label)
@@ -943,37 +1078,58 @@ function drawPlot(ui, result) {
   });
 
   if (item) {
-    const parents = item.parent_points.map(pointObject);
+    const parents = (item.parent_points || []).map(pointObject);
     const pulse = 0.5 + 0.5 * Math.sin(state.animTime * 0.006);
     const phaseT = easeOut(clamp(progress, 0, 1));
+    // Random/Gaussian: no neighborhood mesh. Global: pair only. Local: full graph overlays.
+    const showParentLinks = method === "global" || showKnn;
+    const showSimplexFill = method === "simplicial" && parents.length > 2;
+    const showWeights = method === "global" || showKnn;
+    const showInterpolate = method === "global" || showKnn;
 
-    // Phase 0: pool size → random choice → selected cluster coordinates (canvas callout)
+    // Phase 0: method-aware callout
     if (phase === 0) {
-      const lines = [
-        `Pool size = ${Number(item.pool_size) || "—"}`,
-        item.parent_reused ? `same parent simplex · used ${item.parent_reuse_count}×` : "",
-        progress > 0.28 ? `random → ${poolChoiceLabel(item)}` : "random → …",
-        ...((progress > 0.55 ? parents : []).map((parent, index) => {
-          const label = `P${(item.parents[index] ?? index) + 1}`;
-          return `${label} = ${fmtPoint(parent)}`;
-        })).filter(Boolean),
-      ];
+      let lines;
+      if (method === "gaussian") {
+        lines = ["Gaussian N(μ, Σ)", "ellipse = minority covariance", progress > 0.4 ? `sample → ${fmtPoint(item.point)}` : "sampling…"];
+      } else if (method === "random") {
+        lines = [
+          "Duplicate one minority parent",
+          progress > 0.28 ? (parents[0] ? `P${(item.parents[0] ?? 0) + 1} = ${fmtPoint(parents[0])}` : "parent selected") : "selecting…",
+        ];
+      } else if (method === "global") {
+        lines = [
+          "Random minority pair",
+          ...((progress > 0.4 ? parents : []).map((parent, index) => {
+            const label = `P${(item.parents[index] ?? index) + 1}`;
+            return `${label} = ${fmtPoint(parent)}`;
+          })),
+        ];
+      } else {
+        lines = [
+          `Pool size = ${Number(item.pool_size) || "—"}`,
+          item.parent_reused ? `same parent simplex · used ${item.parent_reuse_count}×` : "",
+          progress > 0.28 ? `random → ${poolChoiceLabel(item)}` : "random → …",
+          ...((progress > 0.55 ? parents : []).map((parent, index) => {
+            const label = `P${(item.parents[index] ?? index) + 1}`;
+            return `${label} = ${fmtPoint(parent)}`;
+          })).filter(Boolean),
+        ];
+      }
+      lines = lines.filter(Boolean);
       drawPlotCallout(
         plot,
         lines,
-        lines.map((_, lineIndex) =>
-          lineIndex === 0 ? 1 : lineIndex === 1 ? clamp((progress - 0.28) / 0.2, 0, 1) : clamp((progress - 0.55) / 0.25, 0, 1),
-        ),
+        lines.map((_, lineIndex) => (lineIndex === 0 ? 1 : clamp((progress - 0.25) / 0.35, 0, 1))),
       );
     }
 
-    // Phase 2: always show full λ math while on this step (auto or pause).
-    // Progress-based fade made the box look empty at slow speeds like 0.001x.
-    if (phase === 2) {
+    // Phase 2: λ math for Global / SMOTE / Simplicial
+    if (phase === 2 && showWeights && item.weights?.length) {
       drawPlotCallout(plot, lambdaCalcLines(item));
     }
 
-    // Phase 0+: staggered parent reveal + pulse rings
+    // Parent highlight (Random / Global / local). Gaussian has no parents.
     parents.forEach((parent, index) => {
       const appear =
         phase > 0
@@ -1007,13 +1163,13 @@ function drawPlot(ui, result) {
       ctx.globalAlpha = 1;
     });
 
-    // Phase 1+: animate connecting every parent pair, then links to synthetic target
-    if (phase >= 1) {
+    // Parent-parent connections: Global pair edge, or local neighborhood mesh.
+    // Skip Random/Gaussian. For Global (no connect-neighborhood phase), show from weights onward.
+    if (showParentLinks && parents.length >= 2 && (showKnn ? phase >= 1 : phase >= 2)) {
       const screens = parents.map((parent) => toScreen(parent, result, view));
       const pairs = parentConnectionPairs(parents.length);
       const pairCount = Math.max(pairs.length, 1);
 
-      // Sequential parent-parent connections
       pairs.forEach(([i, j], pairIndex) => {
         let edgeT = 1;
         if (phase === 1) {
@@ -1023,7 +1179,6 @@ function drawPlot(ui, result) {
         if (edgeT <= 0) return;
         const a = screens[i];
         const b = screens[j];
-        // soft glow beam under the dashed line
         ctx.save();
         ctx.strokeStyle = COLORS.accent;
         ctx.globalAlpha = 0.18 + 0.2 * edgeT;
@@ -1046,13 +1201,10 @@ function drawPlot(ui, result) {
           ctx.globalAlpha = 1;
         }
       });
-
-      // Spokes to the new point only from interpolate onward (step 4+) —
-      // earlier green preview sat on/near a parent and looked like a vertex went green.
     }
 
-    // Phase 2+: simplex fill fades in
-    if (phase >= 2 && parents.length > 2) {
+    // Simplicial only: simplex fill
+    if (showSimplexFill && phase >= 2) {
       const fillT = phase === 2 ? phaseT : 1;
       ctx.beginPath();
       parents.forEach((parent, i) => {
@@ -1071,8 +1223,8 @@ function drawPlot(ui, result) {
       ctx.globalAlpha = 1;
     }
 
-    // Phase 2+: weight labels pop
-    if (phase >= 2) {
+    // Weight labels for Global / SMOTE / Simplicial
+    if (showWeights && phase >= 2 && item.weights?.length) {
       parents.forEach((parent, index) => {
         const pop = phase === 2 ? easeOut(clamp((progress * parents.length - index) / 1.1, 0, 1)) : 1;
         if (pop <= 0) return;
@@ -1087,15 +1239,14 @@ function drawPlot(ui, result) {
       });
     }
 
-    // Phase 3 (step 4): form P = Σ λᵢ Pᵢ in place — do not start on parents[0]
-    // (that made one simplex vertex look green).
+    // Interpolate spokes for Global / SMOTE / Simplicial only
     const target = parents.length
       ? {
           x: parents.reduce((s, p, i) => s + p.x * (item.weights[i] || 0), 0),
           y: parents.reduce((s, p, i) => s + p.y * (item.weights[i] || 0), 0),
         }
       : pointObject(item.point);
-    if (phase >= 3 && parents.length) {
+    if (showInterpolate && phase >= 3 && parents.length) {
       const t = phase === 3 ? easeInOut(clamp(progress, 0, 1)) : 1;
       const targetScreen = toScreen(target, result, view);
       const screens = parents.map((parent) => toScreen(parent, result, view));
@@ -1133,7 +1284,7 @@ function drawPlot(ui, result) {
       ctx.globalAlpha = 1;
     }
 
-    // Phase 4: commit burst at the synthetic location
+    // Commit burst (all methods that generate samples)
     if (phase >= 4) {
       const [sx, sy] = toScreen(pointObject(item.point), result, view);
       const burst = phase === 4 ? phaseT : 1;

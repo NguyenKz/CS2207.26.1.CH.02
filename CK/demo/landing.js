@@ -1,4 +1,8 @@
-const API = "http://127.0.0.1:8000";
+// Local two-port run.sh keeps API on :8000; ngrok/same-origin share uses "".
+const API =
+  location.hostname === "127.0.0.1" || location.hostname === "localhost"
+    ? "http://127.0.0.1:8000"
+    : "";
 const STORAGE_KEY = "ssmote-demo-dataset";
 try {
   localStorage.removeItem("ssmote-demo-budget");

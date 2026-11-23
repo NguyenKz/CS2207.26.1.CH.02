@@ -10,6 +10,7 @@ import networkx as nx
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sklearn.datasets import make_swiss_roll
 from sklearn.metrics import f1_score, matthews_corrcoef, precision_score, recall_score
@@ -331,26 +332,32 @@ def serialize_points(points: np.ndarray, labels: np.ndarray) -> list[dict[str, f
     ]
 
 
+def timeline_phases(method: str) -> list[str]:
+    """Method-specific animation steps — avoid implying k-NN for Random/Global/Gaussian."""
+    if method in {"random", "gaussian"}:
+        return ["select-parent", "commit-sample"]
+    if method == "global":
+        return ["select-parent", "show-weights", "interpolate", "commit-sample"]
+    return [
+        "select-parent",
+        "connect-neighborhood",
+        "show-weights",
+        "interpolate",
+        "commit-sample",
+    ]
+
+
 def animation_timeline(
     synthetic: list[dict],
     minority: np.ndarray,
     method: str = "smote",
 ) -> list[dict]:
     """Describe the explainable phases used by the single-canvas renderer."""
-    if method == "random":
-        phases = ["select-parent", "commit-sample"]
-    else:
-        phases = [
-            "select-parent",
-            "connect-neighborhood",
-            "show-weights",
-            "interpolate",
-            "commit-sample",
-        ]
+    phases = timeline_phases(method)
     timeline = []
     for index, item in enumerate(synthetic):
         parents = [int(parent) for parent in item["parents"]]
-        parent_points = [minority[parent].tolist() for parent in parents]
+        parent_points = [minority[parent].tolist() for parent in parents] if parents else []
         timeline.append(
             {
                 "index": index,
@@ -572,7 +579,7 @@ def run(request: RunRequest) -> dict:
     synthetic = sampled_x[len(data["train_x"]):]
     display_synthetic = scaler.inverse_transform(synthetic) if len(synthetic) else synthetic
     display_minority = scaler.inverse_transform(minority)
-    timeline = [] if request.method == "gaussian" else animation_timeline(metadata, minority, request.method)
+    timeline = animation_timeline(metadata, minority, request.method)
     for item in timeline:
         item["parent_points"] = [
             {
@@ -592,6 +599,12 @@ def run(request: RunRequest) -> dict:
             scaler.inverse_transform(np.asarray([item["point"]], dtype=float))[0].tolist()
         )
         display_metadata.append(display_item)
+    # Only local neighborhood methods expose a minority k-NN graph for the canvas.
+    edges = (
+        graph_edges(data["train_x"][data["train_y"] == 1], request.k)
+        if request.method in {"smote", "simplicial"}
+        else []
+    )
     return {
         "method": request.method,
         "dataset": summary,
@@ -601,7 +614,7 @@ def run(request: RunRequest) -> dict:
         "synthetic": display_metadata,
         "minority": serialize_points(display_minority, np.ones(len(display_minority))),
         "timeline": timeline,
-        "edges": graph_edges(data["train_x"][data["train_y"] == 1], request.k),
+        "edges": edges,
         "boundary": boundary_grid(model, all_points, scaler),
         "metrics": metrics(model, data["test_x"], data["test_y"]),
         "seed": request.seed,
@@ -611,7 +624,7 @@ def run(request: RunRequest) -> dict:
         "budget_pct": request.budget_pct,
         "classifier": "KNeighborsClassifier(n_neighbors=5)",
         "normalization": "StandardScaler fitted on training data only",
-        "evaluation": "single fixed synthetic holdout", 
+        "evaluation": "single fixed synthetic holdout",
         "p_vertices": request.p,
         "simplex_dimension": request.p - 1,
     }
@@ -626,3 +639,7 @@ def scenario(dataset: DatasetId = Query(default="fraud")) -> dict:
         "train": serialize_points(data["train_x"], data["train_y"]),
         "test": serialize_points(data["test_x"], data["test_y"]),
     }
+
+
+# After API routes: one-origin share (ngrok) can hit UI + /api on the same port.
+app.mount("/", StaticFiles(directory=str(DEMO_DIR), html=True), name="static")

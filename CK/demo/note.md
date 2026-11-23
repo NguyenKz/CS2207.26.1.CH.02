@@ -113,13 +113,13 @@ Mẫu minh họa (λ chọn tay, không từ RNG):
   - **Paper §4.1 synthetic** (train `n⁺=50`, `n⁻=300`): moons, swiss_roll (chiếu 2D), gaussian_circle, circles (circle-in-circle). Không dùng 21 benchmark HDF5.
   Landing hiện trường `howto` trên từng card.
 - **Landing:** kịch bản demo → chọn dataset → Start demo. Oversample luôn đủ `m = n⁻ − n⁺`.
-- **Methods trên canvas:** Original, **Random Oversampling** (duplicate minority), **Global Mixup** (`Mixup` k=2 từ vendor `ssmote` = baseline convex-pair của paper), **Gaussian**, SMOTE, Simplicial SMOTE. Random dùng timeline ngắn (select → commit).
+- **Methods trên canvas (tên paper §4.1):** Imbalanced, Random, Global, Gaussian, SMOTE, Simplicial SMOTE. Global = vendor `Mixup(k=2)` (convex-pair trên complete graph). Random dùng timeline ngắn (select → commit).
 - **Pipeline paper-style:** fit `StandardScaler` chỉ trên train rồi mới dựng neighborhood/sinh mẫu; train `KNeighborsClassifier(n_neighbors=5)` trên dữ liệu đã chuẩn hóa. Gaussian fit full-covariance chỉ trên minority train.
 - **Làm gì trên canvas:** gọi `/api/fraud/run`, đo recall / precision / F1 / MCC / FN / FP trên một fixed synthetic holdout. Đây chưa phải nested repeated cross-validation của paper.
 - **Animation:** parent/weight animation là minh họa; với một số sampler, metadata animation không phải trace chính xác của từng draw nội bộ.
 - **Step “Nối neighborhood”:** chỉ biểu diễn; không tính thêm cho thuật toán.
 - **Không có:** 21 UCI/HDF5, Borderline / Safe-level / ADASYN, chỉnh k/p/seed trên UI.
-- **Animation λ:** demo tự lấy `eⱼ ~ Exp(1)`, `λⱼ = eⱼ/Σe` để hiện phép tính. Điểm train/F1 vẫn từ sampler chính thức (Global dùng điểm Mixup thật trên timeline).
+- **Animation λ:** demo tự lấy `eⱼ ~ Exp(1)`, `λⱼ = eⱼ/Σe` để hiện phép tính. Điểm train/F1 vẫn từ sampler chính thức (Global dùng điểm convex-pair thật trên timeline).
 - **Lỗi còn lại:** với SMOTE, mapping parent có thể lệch (`parent_rows[index % len]`). Không dùng animation làm bằng chứng tuyệt đối cho từng sample của sampler.
 
 ## Lưu ý khi làm đồ án
